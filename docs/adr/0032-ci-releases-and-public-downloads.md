@@ -55,23 +55,25 @@ Option 2.
 
 - **CI on every push and pull request** (`.github/workflows/ci.yml`): the
   same commands as the `justfile` (`cargo fmt --check`, clippy with warnings
-  as errors, `cargo test --workspace`), `cargo deny check`, and the app's
-  i18n audit. Read-only token permissions.
+  as errors, `cargo test --workspace`) on Linux, the tests again on macOS,
+  `cargo deny check`, and the app's i18n audit. Read-only token permissions.
 - **Release on a `v*` tag** (`.github/workflows/release.yml`), or by hand
   for a tag that already exists. The tag must equal the workspace version.
   It builds:
   - the host daemon for `x86_64-linux` and `aarch64-linux` (glibc 2.28,
-    cross-compiled with cargo-zigbuild) and `x86_64-windows`;
+    cross-compiled with cargo-zigbuild), `x86_64-windows`, and
+    `aarch64-macos` and `x86_64-macos`;
   - the Core (`guardian`) for `aarch64-linux` (the Pi) and `x86_64-linux`;
   - the owner app for the desktop: `.deb` and AppImage (Linux), NSIS
-    installer (Windows);
+    installer (Windows), a universal `.dmg` (macOS), signed and notarized
+    when the `APPLE_*` secrets exist and ad-hoc signed otherwise;
   - the OpenCode plugin `guardian.ts`;
   - an Android APK, built in debug mode and marked experimental until the
     release keystore exists (ADR-0017 follow-up). Its job may fail without
     blocking the release.
 - **Names are fixed** because `install.sh` depends on them:
-  `hawk-<v>-<x86_64|aarch64>-linux.tar.gz` (folder
-  `hawk-<v>-<triple>/host-daemon`), `hawk-<v>-x86_64-windows.zip`,
+  `hawk-<v>-<x86_64|aarch64>-<linux|macos>.tar.gz` (folder
+  `hawk-<v>-<arch>-<os>/host-daemon`), `hawk-<v>-x86_64-windows.zip`,
   `hawk-core-<v>-<arch>-linux.tar.gz`, `hawk-witness-<v>-...`,
   `guardian.ts`, `SHA256SUMS`.
 - **Checksums now, signature when the key exists.** `SHA256SUMS` covers
@@ -119,8 +121,12 @@ Build tools only; nothing is linked into the product.
 
 ### Tradeoffs
 
-- Actions minutes on a private repository are metered; macOS builds cost
-  ten times more and are left out for now.
+- Actions minutes on a private repository are metered and macOS minutes
+  cost ten times more; the team accepted the cost because macOS hosts and
+  owners are common.
+- On macOS `install.sh` installs the daemon binary only; a launchd service
+  under its own user (the daemon must not run as the agent's user) is
+  pending.
 - The Render token can read the whole private repository, not only its
   releases (GitHub has no narrower scope); it is read-only and lives only in
   Render.
@@ -143,7 +149,8 @@ Build tools only; nothing is linked into the product.
 2. Generate a minisign key, keep the secret key in GitHub, embed the public
    key in `install.sh`.
 3. Pin every action by commit hash.
-4. Release keystore for the APK; macOS builds.
+4. Release keystore for the APK; Apple Developer ID certificate and
+   notarization secrets; launchd service on macOS.
 
 ## Related decisions
 
@@ -160,3 +167,5 @@ Build tools only; nothing is linked into the product.
 ## History
 
 - v1.0 (2026-10-24): Initial proposal.
+- v1.1 (2026-10-24): macOS added (daemon for both architectures, universal
+  `.dmg`, tests in CI), at the team's request.

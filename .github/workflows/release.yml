@@ -150,6 +150,56 @@ jobs:
           name: witness-linux
           path: dist/*
 
+  macos:
+    name: daemon and app (macOS)
+    needs: meta
+    runs-on: macos-14
+    env:
+      V: ${{ needs.meta.outputs.version }}
+      # Optional: with these secrets Tauri signs and notarizes the app;
+      # without them the .dmg is ad-hoc signed and Gatekeeper warns.
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - name: Host daemon
+        run: |
+          mkdir -p dist
+          for arch in aarch64 x86_64; do
+            cargo build --release --locked -p host-daemon --target "$arch-apple-darwin"
+            d="hawk-$V-$arch-macos"
+            mkdir -p "pkg/$d"
+            cp "target/$arch-apple-darwin/release/host-daemon" "pkg/$d/host-daemon"
+            tar -C pkg -czf "dist/$d.tar.gz" "$d"
+          done
+      - name: Owner app (universal .dmg)
+        working-directory: witness
+        run: |
+          # Empty secrets must not reach Tauri as empty variables.
+          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            eval "[ -n \"\${$v}\" ]" || unset "$v"
+          done
+          npx --yes @tauri-apps/cli@2 build --target universal-apple-darwin --bundles dmg
+      - name: Collect
+        run: |
+          dmg="$(ls target/universal-apple-darwin/release/bundle/dmg/*.dmg | head -n1)"
+          [ -n "$dmg" ] || { echo "no dmg"; exit 1; }
+          cp "$dmg" "dist/hawk-witness-$V-universal-macos.dmg"
+          ls -l dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*
+
   android:
     name: app (Android, experimental)
     needs: meta
@@ -190,8 +240,8 @@ jobs:
 
   publish:
     name: publish
-    needs: [meta, linux, windows, witness-linux, android]
-    if: ${{ !cancelled() && needs.linux.result == 'success' && needs.windows.result == 'success' && needs.witness-linux.result == 'success' }}
+    needs: [meta, linux, windows, witness-linux, macos, android]
+    if: ${{ !cancelled() && needs.linux.result == 'success' && needs.windows.result == 'success' && needs.witness-linux.result == 'success' && needs.macos.result == 'success' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write

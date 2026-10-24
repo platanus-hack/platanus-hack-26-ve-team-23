@@ -29,9 +29,10 @@ Every entry is written when the change is merged, under `Unreleased`.
   download, systemd service under its own user, OpenCode plugin).
 - ADR-0032 and GitHub Actions: `ci.yml` (fmt, clippy as errors, tests,
   `cargo deny`, i18n audit on every push and pull request) and
-  `release.yml` (on a `v*` tag: host daemon for Linux x86_64/aarch64 and
-  Windows, the Core for the Pi and x86_64, the app as `.deb`, AppImage and
-  Windows installer, an experimental debug APK, `guardian.ts`,
+  `release.yml` (on a `v*` tag: host daemon for Linux x86_64/aarch64,
+  Windows and macOS (Apple Silicon and Intel), the Core for the Pi and
+  x86_64, the app as `.deb`, AppImage, Windows installer and universal
+  macOS `.dmg`, an experimental debug APK, `guardian.ts`,
   `SHA256SUMS` and an optional minisign signature, then a landing redeploy).
 - `misc/landing/fetch_downloads.py`: the Render build copies the releases
   to `/downloads/`, checks every file against `SHA256SUMS`, and writes an

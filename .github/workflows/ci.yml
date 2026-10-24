@@ -56,6 +56,24 @@ jobs:
       - name: Tests
         run: cargo test --workspace --locked
 
+  macos:
+    name: test (macOS)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ci-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: ci-${{ runner.os }}-
+      - name: Tests
+        run: cargo test --workspace --locked
+
   audit:
     name: licences and advisories
     runs-on: ubuntu-24.04

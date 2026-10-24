@@ -97,14 +97,14 @@ fi
 OS="$(uname -s)"
 ARCH="$(uname -m)"
 case "$OS" in
-  Linux) ;;
-  Darwin) fail "Todavía no hay build para macOS en el release v$VERSION. Corre el daemon en una máquina Linux o pide la build de macOS al equipo." ;;
+  Linux) PLATFORM="linux" ;;
+  Darwin) PLATFORM="macos" ;;
   MINGW*|MSYS*|CYGWIN*) fail "En Windows descarga hawk-$VERSION-x86_64-windows.zip de $BASE_URL/ y corre host-daemon.exe." ;;
   *) fail "Sistema no soportado: $OS." ;;
 esac
 case "$ARCH" in
-  x86_64|amd64) TRIPLE="x86_64-linux" ;;
-  aarch64|arm64) TRIPLE="aarch64-linux" ;;
+  x86_64|amd64) TRIPLE="x86_64-$PLATFORM" ;;
+  aarch64|arm64) TRIPLE="aarch64-$PLATFORM" ;;
   *) fail "Arquitectura no soportada: $ARCH. Hay builds para x86_64 y aarch64." ;;
 esac
 
@@ -193,6 +193,7 @@ else
   step "Instalando el daemon en ~/.local/bin"
   run mkdir -p "$HOME/.local/bin"
   run install -m 0755 "$SRC" "$HOME/.local/bin/$BIN_NAME"
+  if [ "$PLATFORM" = macos ]; then note "En macOS todavía no se instala como servicio (launchd con usuario propio pendiente)."; fi
   note "Sin systemd: arráncalo tú con"
   note "  HOST_DAEMON_DATA_DIR=\$HOME/.hawk ${CORE:+GUARDIAN_CORE=$CORE }$HOME/.local/bin/$BIN_NAME"
   note "Para la demo está bien; en serio debe correr con un usuario distinto al del agente."
