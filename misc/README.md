@@ -21,5 +21,8 @@ Third-party files: three.js and its addons in `landing/vendor/` (MIT,
 `three-LICENSE.txt`), Saira and JetBrains Mono in `landing/fonts/` (OFL-1.1,
 allowed for font files by ADR-0011).
 
-Open items (publishing the page, the release the installer downloads, signing
+Published on Render as the static site `hawk-landing`
+(`infra/render/render.yaml`, see `infra/README.md`).
+
+Open items (creating the Render service, the release the installer downloads, signing
 `SHA256SUMS`): `PENDIENTES.md`, section "Landing y app".

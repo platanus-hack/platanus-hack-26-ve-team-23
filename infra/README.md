@@ -14,11 +14,20 @@ default**; any owner, personal or company, can switch these on:
 | Directory | What |
 |---|---|
 | `aws/` | OpenTofu (Terraform-compatible) module with three targets: `aws`, `localstack`, `s3` (any S3-compatible store with Object Lock) |
-| `render/` | Render Blueprint: RustFS (S3-compatible, Object Lock) on a persistent disk |
+| `render/` | Render Blueprint: the landing page (`misc/landing`, static site) and RustFS (S3-compatible, Object Lock) on a persistent disk |
 | `localstack/` | LocalStack for a demo on another PC |
 
 None of this has been applied yet from this repository (OpenTofu was not
 installed on the development machine).
+
+## Landing page on Render
+
+The same Blueprint publishes `misc/landing` as the static site
+`hawk-landing` (free plan, rebuilt only when `misc/landing` changes) at
+`https://hawk-landing.onrender.com`, which is the URL in the landing's
+install command. `install.sh` is served as `text/plain` so it can be read in
+a browser before it is piped to `sh`. The landing is not part of HAWK: the
+Core, the daemons and the app never contact it.
 
 ## Option A: Render (RustFS)
 

@@ -1,5 +1,10 @@
-# Render Blueprint: the enterprise archive and remote configuration store
-# (ADR-0026, ADR-0027) as an S3-compatible service with Object Lock.
+# Render Blueprint: the landing page, and the enterprise archive and remote
+# configuration store (ADR-0026, ADR-0027) as an S3-compatible service with
+# Object Lock.
+#
+# hawk-landing is a static site (free plan) served from misc/landing; its URL
+# (https://hawk-landing.onrender.com) is the one in the landing's install
+# command. If Render gives the service another name, update misc/landing.
 #
 # RustFS (Apache-2.0, S3-compatible, Object Lock in compliance mode). Use
 # version 1.0.0-rc.1 or later: earlier versions could delete locked objects
@@ -11,6 +16,26 @@
 # `infra/aws` with `-var target=s3` (see infra/README.md).
 
 services:
+  - type: web
+    name: hawk-landing
+    runtime: static
+    buildCommand: ""
+    staticPublishPath: ./misc/landing
+    buildFilter:
+      paths:
+        - misc/landing/**
+    headers:
+      # Shown as text in a browser, so the installer can be read before it is run.
+      - path: /install.sh
+        name: Content-Type
+        value: text/plain; charset=utf-8
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: no-referrer
+
   - type: web
     name: hawk-archive
     runtime: image

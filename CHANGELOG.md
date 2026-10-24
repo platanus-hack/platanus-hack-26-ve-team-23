@@ -27,6 +27,8 @@ Every entry is written when the change is merged, under `Unreleased`.
   part explorer, the real app in a phone frame, design tokens in
   `DESIGN.md`) and the host daemon installer `install.sh` (SHA-256 checked
   download, systemd service under its own user, OpenCode plugin).
+- `infra/render`: the landing page as the static site `hawk-landing`
+  (`https://hawk-landing.onrender.com`, the URL in the install command).
 - `witness/ui`: the app screens rebuilt on the twelve commands of
   `commands.rs` (overview, machines, events, record, settings, activation),
   Spanish and English, an SVG chart with a table alternative, sheets for
