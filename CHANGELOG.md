@@ -8,6 +8,14 @@ Every entry is written when the change is merged, under `Unreleased`.
 
 ## [Unreleased]
 
+### Changed
+
+- Documentation synced with the code: `CLAUDE.md` describes `llm-proxy` and
+  `eval` as built, counts ADRs 0001 to 0030 and names the `origin` remote;
+  the roadmap adds M12 (repository clean-up), M13 (landing page and app
+  redesign, designs ready) and the critical path for the demo;
+  `PENDIENTES.md` lists that path and the redesign after the clean-up.
+
 ### Added
 
 - ADR-0025 and ADR-0026: a Merkle tree per batch with its root inside

@@ -23,7 +23,9 @@ daemon; the only thing they ever show is a notice when the owner presses
 Shared crates: `guardian-core` (record format, chain, signatures, sealing,
 wire messages; no I/O), `edge-net` (QUIC, discovery, loopback HTTP),
 `detect` (rule engine and policy), `integrations` (firewalls, event sinks),
-`llm-proxy` (planned), `eval` (planned). Full flow: `docs/ACTION-TREE.md`.
+`llm-proxy` (tool-call extraction for the proxy that runs inside the
+daemon), `eval` (evaluation set, runner, metrics, `stress`). Full flow:
+`docs/ACTION-TREE.md`.
 
 ## How decisions are made here: ADRs first
 
@@ -48,7 +50,7 @@ other way round.
 5. **Code, then docs, in the same change:** update the component README,
    `CHANGELOG.md` (under Unreleased), `docs/ROADMAP.md` and `PENDIENTES.md`.
 
-Today every ADR is Proposed (0001 to 0024; 0008 superseded by 0017). The
+Today every ADR is Proposed (0001 to 0030; 0008 superseded by 0017). The
 team approves them.
 
 ## Hard rules
@@ -121,7 +123,7 @@ Keystore). Crates depend only downwards; `guardian-core` does no I/O.
 
 - Work happens on branches; Conventional Commits; English; no emojis.
 - The code lives in the **private** repository `JEHR037/team23-private`
-  (remote `private`). **Never push to the public organisation repository**
+  (remote `origin`). **Never push to the public organisation repository**
   until the team decides what to submit. Push only with the user's approval.
 - Do not edit `platanus-hack-project.jsonc`, `project-description.md` or the
   logo unless asked: they are the hackathon submission.

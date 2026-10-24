@@ -6,7 +6,7 @@ What is missing and why: `PENDIENTES.md`.
 
 | # | Milestone | ADRs | State |
 |---|---|---|---|
-| M0 | Decisions recorded | 0001 to 0024 | Written; all Proposed, team approval pending |
+| M0 | Decisions recorded | 0001 to 0030 | Written; all Proposed (0008 superseded by 0017), team approval pending |
 | M1 | Workspace skeleton | 0012, 0013 | Done (clippy as errors, tests, `just`, `cargo deny`; Docker files untested) |
 | M2 | Agent under test | 0009 | Pending: OpenCode + Ollama on the 4070 |
 | M3 | Evaluation set | 0010 | Done: task format, 15+15 tasks, runner and metrics in `eval/`; scale to 30/30 |
@@ -22,7 +22,13 @@ What is missing and why: `PENDIENTES.md`.
 | M9 | Pairing | 0017 | Done with a P-256 owner key bound to the Core, nonce and app identity; passkeys pending |
 | M9b | Host identity and identify | 0015, 0021 | Done: fingerprint per host, identify notice, owner enrolment, heartbeat and dead man's switch; TPM key and boot quote pending (hardware) |
 | M10 | Classifier | 0005 | Pending |
-| M11 | Results and demo | 0010 | Pending |
+| M11 | Results and demo | 0010 | Pending: needs M2, a real `eval` run against the Core, the demo router and the Pi |
+| M12 | Repository clean-up | – | In progress: documentation synced with the code |
+| M13 | Landing page and app redesign | 0013 | Designs ready; implementation after M12 |
+
+Critical path for the demo: M2, then M11 (router, Pi, `eval` metrics,
+recorded-session fallback). M10, passkeys, the TPM key, the S3 archive and
+remote configuration are not in the demo script and can wait.
 
 ## After the hackathon
 
