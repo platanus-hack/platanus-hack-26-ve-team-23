@@ -9,8 +9,13 @@
 
 pub mod chain;
 pub mod event;
+pub mod head;
+pub mod keys;
+pub mod seal;
 pub mod types;
 
 pub use chain::{verify, ChainError, Digest, HashChain};
 pub use event::{Event, EventKind};
+pub use head::{HeadError, SignedHead};
+pub use keys::{CoreKeys, CorePublic};
 pub use types::{Decision, Finding, Severity, ToolCall};

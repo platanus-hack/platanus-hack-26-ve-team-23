@@ -36,6 +36,16 @@ hyper-util = { version = "0.1", features = ["tokio", "client-legacy", "http1"] }
 http-body-util = "0.1"
 bytes = "1"
 
+# Cryptography: established crates only, never our own primitives (ADR-0014).
+ed25519-dalek = "2"
+ml-dsa = "0.1"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+chacha20poly1305 = "0.10"
+hkdf = "0.12"
+rand_core = { version = "0.6", features = ["getrandom"] }
+rand = "0.8"
+zeroize = { version = "1", features = ["zeroize_derive"] }
+
 # Lints shared by every crate. `cargo clippy -- -D warnings` turns every
 # warning into an error in CI; tests may unwrap (see clippy.toml).
 [workspace.lints.rust]
