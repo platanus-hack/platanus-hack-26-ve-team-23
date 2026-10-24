@@ -42,6 +42,11 @@ Styled like an observability dashboard (Datadog-like), see ADR-0013:
 - The owner and epoch keys are files in the app's data directory for the
   desktop build and the demo; on Android they move to the Keystore.
 
+## Preview
+
+Open `preview/index.html` in a browser to see the dashboard with sample data;
+no Core or Tauri needed.
+
 ## Layout
 
 - `src/lib.rs`: `run()`, also the mobile entry point.

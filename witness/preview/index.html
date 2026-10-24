@@ -1,0 +1,87 @@
+<!doctype html>
+<!-- Preview of the witness dashboard with sample data. Open in a browser; no
+     Core or Tauri needed. Not part of the app (frontendDist is ui/). -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Witness (preview)</title>
+  <link rel="stylesheet" href="../ui/style.css">
+</head>
+<body>
+  <header>
+    <div class="brand">HAWK <span class="muted">witness</span></div>
+    <div id="state" class="pill pill-unknown">connecting</div>
+    <form id="connect">
+      <input id="core-url" value="http://192.168.88.20:8080" spellcheck="false" aria-label="Core address">
+      <button type="submit">Connect</button>
+    </form>
+  </header>
+  <main>
+    <section id="pairing" hidden></section>
+    <section id="banner" class="banner" hidden></section>
+    <section class="tiles">
+      <div class="tile"><span class="label">Decided</span><span class="value" id="t-total">0</span></div>
+      <div class="tile ok"><span class="label">Allowed</span><span class="value" id="t-allow">0</span></div>
+      <div class="tile bad"><span class="label">Denied</span><span class="value" id="t-deny">0</span></div>
+      <div class="tile warn"><span class="label">Asked</span><span class="value" id="t-ask">0</span></div>
+      <div class="tile bad"><span class="label">Contained</span><span class="value" id="t-contained">0</span></div>
+      <div class="tile" id="tile-heads"><span class="label">Signed heads</span><span class="value" id="t-heads">0</span><span class="sub" id="t-heads-sub"></span></div>
+    </section>
+    <section class="panel">
+      <h2>Decisions per minute <span class="muted">last 30 min</span></h2>
+      <svg id="chart" viewBox="0 0 600 140" preserveAspectRatio="none" role="img" aria-label="Decisions per minute"></svg>
+      <div class="legend"><span class="dot ok"></span>allow <span class="dot bad"></span>deny <span class="dot warn"></span>ask</div>
+    </section>
+    <section class="panel">
+      <h2>Top rules</h2>
+      <ul id="rules" class="bars"></ul>
+    </section>
+    <section class="panel wide">
+      <h2>Events</h2>
+      <div class="filters">
+        <select id="f-decision" aria-label="Decision"><option value="">all decisions</option><option>allow</option><option>deny</option><option>ask</option></select>
+        <select id="f-severity" aria-label="Severity"><option value="">all severities</option><option>critical</option><option>high</option><option>medium</option><option>low</option></select>
+        <input id="f-text" placeholder="filter host, session, tool, rule" spellcheck="false">
+      </div>
+      <table>
+        <thead><tr><th>Time</th><th>#</th><th>Kind</th><th>Host</th><th>Tool</th><th>Decision</th><th>Severity</th><th>Rule</th></tr></thead>
+        <tbody id="events"></tbody>
+      </table>
+    </section>
+    <section class="panel wide">
+      <h2>Signed heads <span class="muted">checked against the key pinned at pairing</span></h2>
+      <ul id="heads" class="heads"></ul>
+    </section>
+  </main>
+  <script>
+    // Stand-in for the Tauri command layer, with sample data.
+    const now = Date.now();
+    const hosts = ["10.0.0.7", "10.0.0.9"];
+    const sample = [
+      ["bash", "allow"], ["read", "allow"], ["edit", "allow"], ["bash", "allow"],
+      ["bash", "deny", "high", "history.delete"], ["write", "allow"], ["bash", "ask", "medium", "net.unusual"],
+      ["read", "allow"], ["bash", "deny", "critical", "hook.tamper"], ["edit", "allow"],
+    ];
+    const events = [];
+    let seq = 0;
+    for (let i = 0; i < 90; i++) {
+      const [tool, decision, severity, rule] = sample[(i * 7) % sample.length];
+      events.push({ seq: seq++, timestamp_ms: now - (90 - i) * 19000, kind: "decision", session: "s1",
+        tool, decision, rule: rule || null, severity: severity || null, host: hosts[i % 2], reason: null });
+      if (rule === "hook.tamper") {
+        events.push({ seq: seq++, timestamp_ms: now - (90 - i) * 19000 + 400, kind: "containment", session: null,
+          tool: null, decision: null, rule: null, severity: "critical", host: hosts[i % 2], reason: "contained" });
+      }
+    }
+    const heads = [];
+    for (let s = 9; s < seq; s += 10) heads.push({ seq: s, timestamp_ms: now - (seq - s) * 19000,
+      head: Array.from({ length: 64 }, (_, i) => "0123456789abcdef"[(s * 7 + i * 5) % 16]).join(""), valid: true });
+    window.__TAURI__ = { core: { invoke: async (cmd) => cmd === "dashboard" ? {
+      reachable: true, error: null, paired_here: true, identity_matches: true,
+      status: { paired: true, events: seq, head: heads.at(-1).head, last_signed_seq: heads.at(-1).seq },
+      events, heads_total: heads.length, heads_invalid: 0, heads } : null } };
+  </script>
+  <script src="../ui/app.js"></script>
+</body>
+</html>
