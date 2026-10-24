@@ -6,16 +6,22 @@
 //! nothing on that socket leaves the machine.
 //!
 //! Finding the Core (ADR-0024): `GUARDIAN_CORE` (`ip:port`) when set,
-//! otherwise the first active Core discovered on the network. The Core's
-//! identity is pinned: `GUARDIAN_CORE_ID` when set, otherwise the first one
-//! this daemon talks to, stored in `core.pin`.
+//! otherwise the first active Core discovered on the network.
+//!
+//! Which Core it obeys (ADR-0029, `pin.rs`): the Core compiled into the
+//! binary (`HAWK_CORE_ID`), else `GUARDIAN_CORE_ID`, else the Core and owner
+//! written to `core.pin` when the owner approved this host. An unpinned
+//! daemon talks to one Core per session and persists nothing until that
+//! approval arrives; meanwhile the Core denies its calls.
 //!
 //! It never decides: it returns the Core's answer, and denies when the Core
 //! cannot be found or reached, or the answer is unusable.
 
 #![forbid(unsafe_code)]
 
+mod machine;
 mod notice;
+mod pin;
 
 use std::{
     error::Error as StdError,
@@ -63,8 +69,16 @@ struct Link {
     client: quic::Client,
     locator: Locator,
     pin_file: Option<PathBuf>,
+    /// The persisted pin, if any (`pin.rs`).
+    pin: Mutex<Option<pin::Pin>>,
+    /// The Core this daemon talks to: the pinned one, or the one of this
+    /// session while it waits for the owner's approval.
     pinned: Mutex<Option<PeerId>>,
     conn: Mutex<Option<Connection>>,
+    /// This daemon's identity.
+    id: PeerId,
+    /// The OS machine id, hashed per Core before it is sent (ADR-0028).
+    machine_id: Option<String>,
 }
 
 impl std::fmt::Debug for Link {
@@ -127,20 +141,18 @@ impl Relay {
         pin_file: Option<PathBuf>,
     ) -> Result<Self, String> {
         let identity = quic::TlsIdentity::from_signing_key(key, "hawk-host")?;
-        let pinned = pin.or_else(|| {
-            pin_file
-                .as_deref()
-                .and_then(|p| fs::read_to_string(p).ok())
-                .as_deref()
-                .and_then(hex32)
-        });
+        let pin = pin::resolve(pin, pin_file.as_deref());
+        let pinned = pin.as_ref().and_then(pin::Pin::core_id);
         Ok(Self {
             link: Arc::new(Link {
                 client: quic::Client::new(identity)?,
                 locator,
                 pin_file,
+                pin: Mutex::new(pin),
                 pinned: Mutex::new(pinned),
                 conn: Mutex::new(None),
+                id: key.verifying_key().to_bytes(),
+                machine_id: machine::machine_id(),
             }),
         })
     }
@@ -179,12 +191,13 @@ impl Relay {
         let addr = self.find(pinned).await?;
         let (conn, id) = self.link.client.connect(addr, pinned).await?;
         if pinned.is_none() {
-            // Trust on first use, until host enrolment exists (ADR-0021).
-            tracing::warn!(core = %hex::encode(&id[..8]), "pinning this core");
+            // This session only: nothing is written until the owner approves
+            // this host from the app (ADR-0029).
+            tracing::warn!(
+                core = %quic::fingerprint(&id),
+                "not pinned: talking to this core until the owner approves this host"
+            );
             *self.link.pinned.lock().await = Some(id);
-            if let Some(path) = &self.link.pin_file {
-                let _ = write_private(path, hex::encode(id).as_bytes());
-            }
         }
         self.introduce(&conn, id).await;
         *slot = Some(conn.clone());
@@ -194,39 +207,67 @@ impl Relay {
     /// Tells the Core how to show this host, and answers what the Core asks
     /// on this connection (the identification signal).
     async fn introduce(&self, conn: &Connection, core: PeerId) {
+        let hwid = self.hwid(&core);
         let hello = Wire::HostHello {
             hostname: hostname(),
             os: std::env::consts::OS.to_owned(),
+            hwid: hwid.clone(),
+            nics: machine::nics(),
         };
         if let Err(err) =
             quic::request::<_, WireResponse>(conn, &hello, Duration::from_secs(5)).await
         {
             tracing::warn!(%err, "core did not take the host hello");
         }
+        let link = Arc::clone(&self.link);
         tokio::spawn(quic::serve_connection(
             conn.clone(),
             core,
-            |_peer, _addr, req: Wire| async move {
-                match req {
-                    Wire::IdentifySelf {
-                        core_name,
-                        fingerprint,
-                    } => {
-                        let text = notice::message(&core_name, &fingerprint, &hostname());
-                        let shown = tokio::task::spawn_blocking(move || notice::show(&text))
-                            .await
-                            .unwrap_or(false);
-                        if !shown {
-                            tracing::warn!(
-                                "no desktop notifier accepted the notice; it is in the log"
-                            );
-                        }
-                        WireResponse::Ack
+            move |peer, _addr, req: Wire| {
+                let link = Arc::clone(&link);
+                let hwid = hwid.clone();
+                async move {
+                    // Only the Core this connection was opened to may ask.
+                    if peer != core {
+                        return WireResponse::error("not the pinned core");
                     }
-                    _ => WireResponse::error("a host daemon only answers identification"),
+                    match req {
+                        Wire::Enrolled {
+                            approval,
+                            owner_public,
+                        } => enrolled(&link, core, &hwid, &approval, &owner_public).await,
+                        Wire::IdentifySelf {
+                            core_name,
+                            fingerprint,
+                        } => {
+                            let text = notice::message(&core_name, &fingerprint, &hostname());
+                            let shown = tokio::task::spawn_blocking(move || notice::show(&text))
+                                .await
+                                .unwrap_or(false);
+                            if !shown {
+                                tracing::warn!(
+                                    "no desktop notifier accepted the notice; it is in the log"
+                                );
+                            }
+                            WireResponse::Ack
+                        }
+                        _ => WireResponse::error(
+                            "a host daemon only answers identification and enrolment",
+                        ),
+                    }
                 }
             },
         ));
+    }
+
+    /// This machine's HWID for `core` (ADR-0028); empty when the OS has no
+    /// machine id.
+    fn hwid(&self, core: &PeerId) -> String {
+        self.link
+            .machine_id
+            .as_deref()
+            .map(|id| guardian_core::machine::hwid(core, id))
+            .unwrap_or_default()
     }
 
     async fn decide(&self, call: &ToolCall) -> Decision {
@@ -256,6 +297,39 @@ impl Relay {
             }
         }
         Decision::deny("core unreachable")
+    }
+}
+
+/// The owner approved this host: check the approval against the pin in force
+/// and keep the new pin (ADR-0029).
+async fn enrolled(
+    link: &Link,
+    core: PeerId,
+    hwid: &str,
+    approval: &guardian_core::wire::HostApproval,
+    owner_public: &str,
+) -> WireResponse {
+    let mut slot = link.pin.lock().await;
+    match pin::accept(slot.as_ref(), &core, &link.id, hwid, approval, owner_public) {
+        Ok(pin) => {
+            if !pin.is_fixed() {
+                if let Some(path) = &link.pin_file {
+                    let bytes = serde_json::to_vec_pretty(&pin).unwrap_or_default();
+                    if let Err(err) = write_private(path, &bytes) {
+                        tracing::error!(%err, "could not write the pin");
+                        return WireResponse::error("could not write the pin");
+                    }
+                }
+            }
+            tracing::warn!(core = %quic::fingerprint(&core), source = ?pin.source, "approved by the owner; core and owner pinned");
+            *link.pinned.lock().await = Some(core);
+            *slot = Some(pin);
+            WireResponse::Ack
+        }
+        Err(err) => {
+            tracing::error!(%err, "enrolment refused");
+            WireResponse::error(err)
+        }
     }
 }
 
@@ -306,9 +380,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .as_deref()
         .and_then(hex32);
     let relay = Relay::new(&key, locator, pin, Some(dir.join("core.pin")))?;
+    let pinned = relay.link.pin.lock().await.clone();
     tracing::warn!(
         fingerprint = %quic::fingerprint(&key.verifying_key().to_bytes()),
         hostname = %hostname(),
+        pin = ?pinned.as_ref().map(|p| (p.source, quic::fingerprint(&p.core_id().unwrap_or_default()))),
         "host identity"
     );
 
@@ -388,5 +464,130 @@ mod tests {
         assert!(!ask(relay(Locator::Fixed(addr), Some(id)), b"{nope")
             .await
             .is_allow());
+    }
+
+    /// A stand-in Core that keeps the daemon's connection and the HWID it
+    /// reported, so the test can hand over an approval like the real Core.
+    async fn enrolling_core() -> (
+        SocketAddr,
+        PeerId,
+        Arc<std::sync::Mutex<Option<(Connection, String)>>>,
+    ) {
+        let key = SigningKey::generate(&mut OsRng);
+        let identity = quic::TlsIdentity::from_signing_key(&key, "hawk-core").unwrap();
+        let endpoint = quic::server(&identity, "127.0.0.1:0".parse().unwrap()).unwrap();
+        let addr = endpoint.local_addr().unwrap();
+        let seen: Arc<std::sync::Mutex<Option<(Connection, String)>>> = Arc::default();
+        let (on_connect, on_hello) = (Arc::clone(&seen), Arc::clone(&seen));
+        tokio::spawn(quic::serve_with(
+            endpoint,
+            move |_peer, conn| {
+                *on_connect.lock().unwrap() = Some((conn, String::new()));
+            },
+            move |_peer, _addr, req: Wire| {
+                let seen = Arc::clone(&on_hello);
+                async move {
+                    match req {
+                        Wire::HostHello { hwid, .. } => {
+                            if let Some(slot) = seen.lock().unwrap().as_mut() {
+                                slot.1 = hwid;
+                            }
+                            WireResponse::Ack
+                        }
+                        _ => WireResponse::Decision {
+                            decision: Decision::Allow,
+                        },
+                    }
+                }
+            },
+        ));
+        (addr, identity.peer_id, seen)
+    }
+
+    fn signed_approval(
+        owner: &p256::ecdsa::SigningKey,
+        core: &PeerId,
+        host: &PeerId,
+        hwid: &str,
+    ) -> guardian_core::wire::HostApproval {
+        use p256::ecdsa::{signature::Signer as _, Signature};
+        let message = guardian_core::wire::approve_message(core, host, hwid, 1);
+        let signature: Signature = owner.sign(&message);
+        guardian_core::wire::HostApproval {
+            core: hex::encode(core),
+            host: hex::encode(host),
+            hwid: hwid.into(),
+            timestamp_ms: 1,
+            signature: hex::encode(signature.to_der().as_bytes()),
+        }
+    }
+
+    #[tokio::test]
+    async fn the_owner_approval_pins_core_and_owner_and_a_forgery_does_not() {
+        let dir = std::env::temp_dir().join(format!(
+            "hawk-daemon-enrol-{}",
+            hex::encode(rand::random::<[u8; 8]>())
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let pin_file = dir.join("core.pin");
+        let (addr, core_id, seen) = enrolling_core().await;
+        let host_key = SigningKey::generate(&mut OsRng);
+        let host_id = host_key.verifying_key().to_bytes();
+        let relay = Relay::new(
+            &host_key,
+            Locator::Fixed(addr),
+            None,
+            Some(pin_file.clone()),
+        )
+        .unwrap();
+
+        // The first call opens the connection and sends the hello; nothing
+        // is pinned on disk yet.
+        assert!(ask(relay.clone(), CALL).await.is_allow());
+        assert!(!pin_file.exists());
+        let (conn, hwid) = seen.lock().unwrap().clone().unwrap();
+
+        // A forged approval (someone else's owner key over another HWID).
+        let owner = p256::ecdsa::SigningKey::random(&mut OsRng);
+        let owner_hex = hex::encode(owner.verifying_key().to_encoded_point(true).as_bytes());
+        let mut forged = signed_approval(&owner, &core_id, &host_id, &hwid);
+        forged.hwid = "ffffffffffffffffffffffffffffffff".into();
+        let refused: WireResponse = quic::request(
+            &conn,
+            &Wire::Enrolled {
+                approval: forged,
+                owner_public: owner_hex.clone(),
+            },
+            Duration::from_secs(5),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(refused, WireResponse::Error { .. }));
+        assert!(!pin_file.exists());
+
+        // The real approval: Core and owner are pinned in a v2 file.
+        let approval = signed_approval(&owner, &core_id, &host_id, &hwid);
+        let accepted: WireResponse = quic::request(
+            &conn,
+            &Wire::Enrolled {
+                approval,
+                owner_public: owner_hex.clone(),
+            },
+            Duration::from_secs(5),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(accepted, WireResponse::Ack));
+        let pin = pin::Pin::read(&pin_file).unwrap();
+        assert_eq!(pin.core_id(), Some(core_id));
+        assert_eq!(pin.owner.as_deref(), Some(owner_hex.as_str()));
+        assert_eq!(pin.source, pin::Source::Enrolment);
+
+        // After a restart the daemon refuses any other Core.
+        let (other_addr, _) = fake_core(Decision::Allow).await;
+        let restarted =
+            Relay::new(&host_key, Locator::Fixed(other_addr), None, Some(pin_file)).unwrap();
+        assert!(!ask(restarted, CALL).await.is_allow());
+        let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -12,6 +12,7 @@
 
 use std::{fmt, future::Future, net::IpAddr, pin::Pin};
 
+use guardian_core::machine::Mac;
 use serde::Serialize;
 
 pub mod archive;
@@ -64,6 +65,32 @@ pub trait Firewall: fmt::Debug + Send + Sync {
         reason: &'a str,
     ) -> BoxFuture<'a, Result<(), FirewallError>>;
     fn release(&self, host: IpAddr) -> BoxFuture<'_, Result<(), FirewallError>>;
+
+    /// Containment by hardware address (ADR-0028), so a new IP address of
+    /// the same interface stays contained. The MAC must be one the Core
+    /// observed, never one a host declared. Adapters that cannot filter by
+    /// MAC refuse; the IP containment still holds.
+    fn quarantine_mac<'a>(
+        &'a self,
+        mac: Mac,
+        reason: &'a str,
+    ) -> BoxFuture<'a, Result<(), FirewallError>> {
+        let _ = (mac, reason);
+        Box::pin(async {
+            Err(FirewallError::Config(
+                "this firewall cannot filter by MAC".into(),
+            ))
+        })
+    }
+
+    fn release_mac(&self, mac: Mac) -> BoxFuture<'_, Result<(), FirewallError>> {
+        let _ = mac;
+        Box::pin(async {
+            Err(FirewallError::Config(
+                "this firewall cannot filter by MAC".into(),
+            ))
+        })
+    }
 }
 
 /// Metadata published to sinks. Never the sealed content (ADR-0020).

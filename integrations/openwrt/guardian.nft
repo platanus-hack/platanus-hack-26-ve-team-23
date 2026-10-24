@@ -1,14 +1,24 @@
 # Included by fw4 inside `table inet fw4` (install as /etc/nftables.d/guardian.nft,
 # then `fw4 reload`). Replace CORE_ADDRESS with the Core's address before
 # installing: quarantined hosts can still reach the Core, nothing else.
+#
+# Two sets (ADR-0028): addresses, and the MACs the Core observed for them, so
+# a contained interface that takes a new address stays contained.
 
 set guardian_quarantine {
 	type ipv4_addr
 	comment "hosts contained by the Guardian Core"
 }
 
+set guardian_quarantine_mac {
+	type ether_addr
+	comment "interfaces contained by the Guardian Core"
+}
+
 chain guardian_forward {
 	type filter hook forward priority filter - 10; policy accept;
 	ip saddr @guardian_quarantine ip daddr CORE_ADDRESS accept
+	ether saddr @guardian_quarantine_mac ip daddr CORE_ADDRESS accept
 	ip saddr @guardian_quarantine counter drop
+	ether saddr @guardian_quarantine_mac counter drop
 }

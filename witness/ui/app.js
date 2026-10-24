@@ -113,6 +113,7 @@ function renderKpis(decisions, containments, d) {
   $("k-rate").textContent = `${(decisions.length / rangeMin).toFixed(1)} per minute`;
   $("k-ask").textContent = fmt.format(count("ask"));
   const hosts = new Set(containments.map((e) => e.host).filter(Boolean));
+  for (const h of d.hosts || []) if (h.contained) hosts.add(h.address);
   $("k-contained").textContent = fmt.format(hosts.size);
   if (!d.paired_here) {
     $("k-integrity").textContent = "–";
@@ -253,6 +254,38 @@ function renderRules(decisions) {
   }
 }
 
+// Every identifier the owner may search a host by (ADR-0028).
+function hostMatches(h, text) {
+  if (!text) return true;
+  const fields = [h.hostname, h.address, h.mac, h.hwid, h.fingerprint, h.os, ...(h.nics || []).flatMap((n) => [n.name, n.mac])];
+  return fields.some((v) => (v || "").toLowerCase().includes(text));
+}
+
+const shortHwid = (hwid) => (hwid ? `${hwid.slice(0, 8)}…${hwid.slice(-4)}` : "–");
+
+function actionButton(label, title, run, enabled) {
+  const button = el("button", label, "ghost small");
+  button.type = "button";
+  button.title = title;
+  button.disabled = !enabled;
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    try {
+      await run();
+      button.textContent = "Sent";
+    } catch (err) {
+      button.textContent = "Failed";
+      showBanner(String(err));
+    } finally {
+      setTimeout(() => {
+        button.textContent = label;
+        button.disabled = !enabled;
+      }, 4000);
+    }
+  });
+  return button;
+}
+
 function renderHosts(hosts, events) {
   const list = $("host-list");
   list.replaceChildren();
@@ -267,45 +300,77 @@ function renderHosts(hosts, events) {
     activity.set(e.host, a);
   }
   const connected = hosts.filter((h) => h.connected).length;
-  $("host-count").textContent = hosts.length ? `${connected} of ${hosts.length} connected` : "";
+  const pending = hosts.filter((h) => !h.approved).length;
+  $("host-count").textContent = hosts.length
+    ? `${connected} of ${hosts.length} connected${pending ? ` · ${pending} awaiting approval` : ""}`
+    : "";
   if (!hosts.length) {
     list.appendChild(el("li", "No host daemon has connected to this Core yet.", "muted"));
     return;
   }
-  for (const h of hosts) {
+  const text = $("host-filter").value.trim().toLowerCase();
+  const shown = hosts.filter((h) => hostMatches(h, text));
+  if (!shown.length) {
+    list.appendChild(el("li", "No host matches this filter.", "muted"));
+    return;
+  }
+  for (const h of shown) {
     const a = activity.get(h.address) || { calls: 0, denied: 0, contained: false };
     const li = el("li", undefined, "host");
     let state;
-    if (a.contained) state = el("span", "Contained", "chip contained");
+    if (h.contained || a.contained) state = el("span", "Contained", "chip contained");
+    else if (!h.approved) state = el("span", "Awaiting approval", "chip pending");
     else if (h.connected) state = el("span", "Connected", "chip allow");
     else state = el("span", "Offline", "chip neutral");
-    const identify = el("button", "Identify", "ghost small");
-    identify.type = "button";
-    identify.title = "Show a notice on this machine's screen";
-    identify.disabled = !h.connected;
-    identify.addEventListener("click", async () => {
-      identify.disabled = true;
-      try {
-        await invoke("identify_host", { host: h.id });
-        identify.textContent = "Sent";
-      } catch (err) {
-        identify.textContent = "Failed";
-        showBanner(String(err));
-      } finally {
-        setTimeout(() => {
-          identify.textContent = "Identify";
-          identify.disabled = !h.connected;
-        }, 4000);
-      }
-    });
+
     const actions = el("div", undefined, "host-actions");
-    actions.append(state, identify);
+    actions.appendChild(state);
+    if (!h.approved) {
+      actions.appendChild(
+        actionButton(
+          "Approve",
+          "Let this Core decide for this host. Check the fingerprint on its screen first (Identify).",
+          async () => {
+            const question = `Approve ${h.hostname || h.address} (${h.fingerprint})? Its calls are denied until you do.`;
+            if (!confirm(question)) throw new Error("Approval cancelled");
+            await invoke("approve_host", { host: h.id, hwid: h.hwid || "" });
+            refresh();
+          },
+          h.connected && !h.conflict,
+        ),
+      );
+    }
+    actions.appendChild(
+      actionButton("Identify", "Show a notice on this machine's screen", () => invoke("identify_host", { host: h.id }), h.connected),
+    );
+
     const name = el("div");
     name.append(el("span", h.hostname || h.address, "addr"), document.createTextNode(" "), el("code", h.fingerprint, "fp"));
-    li.append(
-      name,
-      actions,
-      el("span", `${h.address} · ${h.os} · ${a.calls} calls · ${a.denied} denied · seen ${timeFmt(h.last_seen_ms)}`, "meta"),
+
+    const ids = el("div", undefined, "ids");
+    const id = (label, value, title) => {
+      const span = el("span");
+      if (title) span.title = title;
+      span.append(el("b", label), el("code", value));
+      return span;
+    };
+    ids.append(
+      id("IP", h.address),
+      id("MAC", h.mac || "not on this LAN", "Observed by the Core in its neighbour table"),
+      id("HWID", shortHwid(h.hwid), h.hwid ? `Reported by the daemon, bound to its key: ${h.hwid}` : "The daemon reported no machine id"),
+    );
+
+    li.append(name, actions, ids);
+    if (h.conflict) li.appendChild(el("span", h.conflict, "warn critical"));
+    const virtual = (h.nics || []).filter((n) => n.virtual);
+    if (virtual.length) {
+      const names = virtual.map((n) => n.name).slice(0, 3).join(", ");
+      li.appendChild(
+        el("span", `Hypervisor adapters (${names}${virtual.length > 3 ? ", …" : ""}): this host is a VM or runs VMs. A bridged VM has its own IP and MAC and is not contained with this host.`, "warn"),
+      );
+    }
+    li.appendChild(
+      el("span", `${h.os} · ${a.calls} calls · ${a.denied} denied · seen ${timeFmt(h.last_seen_ms)}`, "meta"),
     );
     list.appendChild(li);
   }
@@ -434,6 +499,7 @@ function wire() {
 
   for (const id of ["f-outcome", "f-severity"]) $(id).addEventListener("change", render);
   $("f-text").addEventListener("input", render);
+  $("host-filter").addEventListener("input", render);
   window.addEventListener("resize", render);
 }
 
@@ -528,8 +594,31 @@ function firewallConfig() {
   return kind === "mikrotik" ? { ...base, list: null } : base;
 }
 
+async function probe(event) {
+  event.preventDefault();
+  const address = $("manual-addr").value.trim();
+  if (!address) return;
+  wizardError("");
+  $("manual-go").disabled = true;
+  try {
+    const core = await invoke("probe_core", { address });
+    if (core.state !== "unpaired") {
+      wizardError(`${core.name} (${core.fingerprint}) is already activated by another device.`);
+      return;
+    }
+    chosen = core;
+    $("verify-fp").textContent = core.fingerprint;
+    wizardStep("verify");
+  } catch (err) {
+    wizardError(`No Core answered at ${address}: ${err}`);
+  } finally {
+    $("manual-go").disabled = false;
+  }
+}
+
 function wireWizard() {
   $("scan").addEventListener("click", scan);
+  $("manual-form").addEventListener("submit", probe);
   $("verify-ok").addEventListener("click", pair);
   $("pair-ok").addEventListener("click", () => wizardStep("configure"));
   for (const back of document.querySelectorAll("[data-back]")) {
@@ -597,10 +686,20 @@ async function boot() {
     });
   }
   invoke = window.__TAURI__.core.invoke;
+  // Android web views that draw edge to edge without reporting a safe area
+  // get a fixed inset for the status and navigation bars.
+  if (/Android/.test(navigator.userAgent)) {
+    document.documentElement.style.setProperty("--inset-top", "28px");
+    document.documentElement.style.setProperty("--inset-bottom", "16px");
+  }
   wire();
-  const info = await loadIdentity();
-  if (info.core) startRefresh();
-  else openWizard();
+  try {
+    const info = await loadIdentity();
+    if (info.core) startRefresh();
+    else openWizard();
+  } finally {
+    document.body.classList.remove("booting");
+  }
 }
 
 boot();

@@ -61,6 +61,9 @@ supersedes it; the old one only has its status updated.
 | [0025](0025-merkle-tree-per-batch.md) | A Merkle tree per batch, its root inside every signed head | Proposed |
 | [0026](0026-off-site-archive-in-s3-object-lock.md) | Off-site archive of sealed batches in S3 with Object Lock | Proposed |
 | [0027](0027-editions-offline-first-and-enterprise.md) | Offline first, optional cloud features for any owner; a configuration chain without rollback | Proposed |
+| [0028](0028-machine-identity-hwid-and-mac.md) | Host selection beyond the IP address: machine id (HWID) and MAC | Proposed |
+| [0029](0029-daemon-pinning-and-host-enrolment.md) | Daemon pinning and host enrolment approved by the owner | Proposed |
+| [0030](0030-core-keys-in-two-moments.md) | Core keys in two moments: transport at boot, head keys at activation | Proposed |
 
 ## Open questions
 

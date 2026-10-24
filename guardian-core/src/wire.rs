@@ -3,7 +3,11 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{keys::CorePublic, Decision, SignedHead, ToolCall};
+use crate::{
+    keys::CorePublic,
+    machine::{Mac, Nic},
+    Decision, SignedHead, ToolCall,
+};
 
 /// The Core's configuration (ADR-0024, ADR-0027). Each configuration is one
 /// link of a chain: it names its `version` (the previous one plus one) and
@@ -149,10 +153,17 @@ pub enum Request {
     Decide {
         call: ToolCall,
     },
-    /// From a host daemon right after it connects: how to show it in the app.
+    /// From a host daemon right after it connects: how to show it in the
+    /// app, and the identifiers that link it over time (ADR-0028). All of it
+    /// is declared, so labels and links only.
     HostHello {
         hostname: String,
         os: String,
+        /// `machine::hwid` for this Core; empty when unknown.
+        #[serde(default)]
+        hwid: String,
+        #[serde(default)]
+        nics: Vec<Nic>,
     },
     /// Paired witness only: the hosts the Core knows.
     Hosts,
@@ -166,6 +177,47 @@ pub enum Request {
         core_name: String,
         fingerprint: String,
     },
+    /// Paired witness only: the owner approves a host, bound to its daemon
+    /// identity and HWID (ADR-0029).
+    ApproveHost {
+        approval: HostApproval,
+    },
+    /// From the Core to an approved host daemon: the owner's approval and
+    /// key, so the daemon pins this Core and this owner (ADR-0029).
+    Enrolled {
+        approval: HostApproval,
+        owner_public: String,
+    },
+}
+
+pub const APPROVE_DOMAIN: &[u8] = b"guardian.approve-host.v1";
+
+/// The owner's approval of one host for one Core (ADR-0029). The signature
+/// covers the Core, the host's daemon identity, its HWID and the time, so it
+/// is worthless for another Core, another key, or a copy of the key on
+/// another machine.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HostApproval {
+    /// Ed25519 identity of the Core, hex.
+    pub core: String,
+    /// Ed25519 identity of the host daemon, hex.
+    pub host: String,
+    /// The host's HWID for this Core; empty if it reported none.
+    pub hwid: String,
+    pub timestamp_ms: u64,
+    /// ECDSA P-256 by the owner (DER, hex) over `approve_message`.
+    pub signature: String,
+}
+
+/// Bytes the owner signs to approve a host.
+pub fn approve_message(core: &[u8; 32], host: &[u8; 32], hwid: &str, timestamp_ms: u64) -> Vec<u8> {
+    let mut message = APPROVE_DOMAIN.to_vec();
+    message.extend_from_slice(core);
+    message.extend_from_slice(host);
+    message.extend_from_slice(&(hwid.len() as u64).to_be_bytes());
+    message.extend_from_slice(hwid.as_bytes());
+    message.extend_from_slice(&timestamp_ms.to_be_bytes());
+    message
 }
 
 /// A host as the Core reports it to the witness.
@@ -180,13 +232,36 @@ pub struct HostInfo {
     pub os: String,
     pub connected: bool,
     pub last_seen_ms: u64,
+    /// Declared by the daemon, bound to its identity (ADR-0028).
+    #[serde(default)]
+    pub hwid: String,
+    /// Observed by the Core in its neighbour table; none behind a router.
+    #[serde(default)]
+    pub mac: Option<Mac>,
+    /// Declared by the daemon.
+    #[serde(default)]
+    pub nics: Vec<Nic>,
+    /// Contained at the firewall, by identity, HWID or MAC.
+    #[serde(default)]
+    pub contained: bool,
+    /// Approved by the owner (ADR-0029); the Core denies every call of a
+    /// host that is not.
+    #[serde(default)]
+    pub approved: bool,
+    /// Why the Core does not trust this host's identifiers, if it does not:
+    /// another identity reported the same HWID, or this identity reported a
+    /// different one than it was approved with.
+    #[serde(default)]
+    pub conflict: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     Hello {
-        core_public: CorePublic,
+        /// The head keys, once the owner's app activated the Core
+        /// (ADR-0030); none while it is dormant.
+        core_public: Option<CorePublic>,
         paired: bool,
         config: Option<ConfigSummary>,
     },
@@ -268,6 +343,33 @@ mod tests {
         second.prev = hex::encode(config_hash(&first));
         assert_ne!(config_hash(&first), config_hash(&second));
         assert_ne!(configure_message(&first), configure_message(&second));
+    }
+
+    #[test]
+    fn the_approval_binds_core_host_hwid_and_time() {
+        let base = approve_message(&[1; 32], &[2; 32], "ab", 10);
+        assert_ne!(base, approve_message(&[3; 32], &[2; 32], "ab", 10));
+        assert_ne!(base, approve_message(&[1; 32], &[3; 32], "ab", 10));
+        assert_ne!(base, approve_message(&[1; 32], &[2; 32], "ac", 10));
+        assert_ne!(base, approve_message(&[1; 32], &[2; 32], "ab", 11));
+        // The length prefix keeps the HWID and the time from sliding.
+        assert_ne!(
+            approve_message(&[1; 32], &[2; 32], "", 10),
+            approve_message(&[1; 32], &[2; 32], "0", 10)
+        );
+    }
+
+    #[test]
+    fn an_old_host_hello_without_identifiers_still_parses() {
+        let old: Request =
+            serde_json::from_str(r#"{"op":"host_hello","hostname":"rig","os":"linux"}"#).unwrap();
+        match old {
+            Request::HostHello { hwid, nics, .. } => {
+                assert!(hwid.is_empty());
+                assert!(nics.is_empty());
+            }
+            other => panic!("unexpected {other:?}"),
+        }
     }
 
     #[test]

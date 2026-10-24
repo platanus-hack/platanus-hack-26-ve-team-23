@@ -15,9 +15,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
             commands::discover,
+            commands::probe_core,
             commands::pair_core,
             commands::configure_core,
             commands::identify_host,
+            commands::approve_host,
             commands::forget_core,
             commands::dashboard
         ])

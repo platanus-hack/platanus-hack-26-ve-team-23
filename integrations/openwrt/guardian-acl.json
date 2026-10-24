@@ -2,7 +2,7 @@
 	"guardian-core": {
 		"description": "The Guardian Core may only use the guardian object",
 		"ubus": {
-			"guardian": ["add", "remove", "list"],
+			"guardian": ["add", "remove", "add_mac", "remove_mac", "list"],
 			"session": ["access", "login"]
 		}
 	}

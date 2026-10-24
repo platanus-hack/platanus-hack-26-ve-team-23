@@ -117,4 +117,6 @@ must satisfy ADR-0011.
 
 ## History
 
+- v1.1 (2026-10-24): pairing v2 (ADR-0030): the owner signs the nonce, the
+  transport identity, the head keys generated at activation and the app.
 - v1.0 (2026-10-24): Initial decision.

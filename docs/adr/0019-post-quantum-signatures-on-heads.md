@@ -93,6 +93,9 @@ optional daily checkpoints, where size and speed do not matter.
 
 ## History
 
+- v1.2 (2026-10-24): the head keys are generated at activation and covered
+  by the owner's pairing signature, separate from the transport key
+  (ADR-0030).
 - v1.1 (2026-10-24): The signed bytes become head v2 and also carry the
   batch's first sequence number and Merkle root (ADR-0025).
 

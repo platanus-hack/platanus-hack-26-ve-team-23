@@ -22,12 +22,14 @@ use tracing_subscriber::EnvFilter;
 
 mod api;
 mod core;
+mod enrolment;
 mod hosts;
+mod neighbors;
 
 const DEFAULT_ADDR: &str = "0.0.0.0:7443";
 
 fn announce(core: &core::Core, port: u16) -> Option<discovery::Announcement> {
-    let id = &core.public().ed25519;
+    let id = core.id();
     let state = if core.is_paired() {
         "active"
     } else {
@@ -131,7 +133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .parse()?;
     let data_dir = std::env::var("GUARDIAN_DATA_DIR").unwrap_or_else(|_| "guardian-data".into());
     let core = core::Core::open(&data_dir)?;
-    let identity = quic::TlsIdentity::from_signing_key(core.keys().transport_key(), "hawk-core")?;
+    let identity = quic::TlsIdentity::from_signing_key(core.transport_key(), "hawk-core")?;
 
     // The fingerprint the owner compares in the activation wizard.
     tracing::warn!(fingerprint = %quic::fingerprint(&identity.peer_id), "core identity");

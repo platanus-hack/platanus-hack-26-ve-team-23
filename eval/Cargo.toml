@@ -9,6 +9,15 @@ description = "Evaluation runner and metrics; trains the classifier."
 [dependencies]
 guardian-core.workspace = true
 detect.workspace = true
+# The `stress` binary: a throwaway owner, app and host daemons over QUIC.
+edge-net.workspace = true
+tokio.workspace = true
+quinn.workspace = true
+ed25519-dalek.workspace = true
+p256.workspace = true
+rand.workspace = true
+hex.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

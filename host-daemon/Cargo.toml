@@ -19,6 +19,8 @@ quinn.workspace = true
 ed25519-dalek.workspace = true
 rand.workspace = true
 hex.workspace = true
+p256.workspace = true
+serde.workspace = true
 
 [dev-dependencies]
 http-body-util.workspace = true

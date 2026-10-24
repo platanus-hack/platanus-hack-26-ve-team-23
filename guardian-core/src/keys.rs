@@ -1,4 +1,7 @@
-//! The Core's signing identity: Ed25519 and ML-DSA-65 together (ADR-0019).
+//! The Core's head-signing keys: Ed25519 and ML-DSA-65 together
+//! (ADR-0019). They are generated when the owner's app activates the Core,
+//! not at first boot; the Core's transport identity is a separate Ed25519
+//! key that exists from the start (ADR-0030).
 //!
 //! Both keys are derived from 32-byte seeds the caller supplies, so this
 //! crate never touches the operating system's random source.
@@ -18,7 +21,7 @@ impl std::fmt::Debug for CoreKeys {
     }
 }
 
-/// Public half, shared with the witness at pairing.
+/// Public half of the head keys, pinned by the witness at pairing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CorePublic {
     #[serde(with = "hex_bytes")]
@@ -36,11 +39,6 @@ impl CoreKeys {
             ed: ed25519_dalek::SigningKey::from_bytes(ed_seed),
             pq: ml_dsa::SigningKey::<MlDsa65>::from_seed(&pq_seed),
         }
-    }
-
-    /// The Ed25519 key, also the Core's QUIC/TLS identity (ADR-0023).
-    pub fn transport_key(&self) -> &ed25519_dalek::SigningKey {
-        &self.ed
     }
 
     pub fn public(&self) -> CorePublic {

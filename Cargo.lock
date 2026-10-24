@@ -1122,7 +1122,15 @@ name = "eval"
 version = "0.1.0"
 dependencies = [
  "detect",
+ "ed25519-dalek",
+ "edge-net",
  "guardian-core",
+ "hex",
+ "p256",
+ "quinn",
+ "rand 0.8.8",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -1756,8 +1764,10 @@ dependencies = [
  "hex",
  "http-body-util",
  "hyper",
+ "p256",
  "quinn",
  "rand 0.8.8",
+ "serde",
  "serde_json",
  "tokio",
  "tracing",
@@ -2119,6 +2129,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "bytes",
+ "guardian-core",
  "hex",
  "http-body-util",
  "hyper",

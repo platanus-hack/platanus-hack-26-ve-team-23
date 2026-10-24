@@ -14,6 +14,7 @@ kafka = ["dep:rskafka"]
 webhook = []
 
 [dependencies]
+guardian-core.workspace = true
 tokio.workspace = true
 hyper.workspace = true
 hyper-util.workspace = true

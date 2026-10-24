@@ -2,8 +2,8 @@
 //!
 //! The Core logs in to rpcd and calls the `guardian` object provided by our
 //! rpcd plugin (`integrations/openwrt/`), which only adds, removes and lists
-//! addresses in one nftables set. The rpcd ACL grants the Core's user those
-//! three methods and nothing else.
+//! entries of two nftables sets: IPv4 addresses and MACs (ADR-0028). The
+//! rpcd ACL grants the Core's user those methods and nothing else.
 //!
 //! Configuration:
 //!
@@ -15,6 +15,7 @@
 
 use std::{net::IpAddr, sync::Mutex, time::Duration};
 
+use guardian_core::machine::Mac;
 use hyper::Method;
 
 use crate::{
@@ -157,24 +158,35 @@ impl OpenWrt {
     }
 
     /// Calls a method of our plugin, logging in again once if the session
-    /// expired.
-    async fn guardian(&self, method: &str, host: IpAddr) -> Result<(), FirewallError> {
-        let args = serde_json::json!({ "address": host.to_string() });
+    /// expired. The plugin answers `{"ok": false}` for input it refuses.
+    async fn guardian(&self, method: &str, args: serde_json::Value) -> Result<(), FirewallError> {
         let cached = self.session.lock().ok().and_then(|s| s.clone());
         let session = match cached {
             Some(s) => s,
             None => self.login().await?,
         };
-        match self.rpc(&session, "guardian", method, args.clone()).await {
-            Ok(_) => Ok(()),
+        let data = match self.rpc(&session, "guardian", method, args.clone()).await {
+            Ok(data) => data,
             Err(FirewallError::Rejected(_)) => {
                 let session = self.login().await?;
-                self.rpc(&session, "guardian", method, args)
-                    .await
-                    .map(|_| ())
+                self.rpc(&session, "guardian", method, args).await?
             }
-            Err(err) => Err(err),
-        }
+            Err(err) => return Err(err),
+        };
+        plugin_answer(&data)
+    }
+}
+
+/// The plugin's own verdict inside a successful ubus call.
+fn plugin_answer(data: &serde_json::Value) -> Result<(), FirewallError> {
+    match data.get("ok").and_then(serde_json::Value::as_bool) {
+        Some(false) => Err(FirewallError::Rejected(format!(
+            "guardian plugin: {}",
+            data.get("message")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("refused")
+        ))),
+        _ => Ok(()),
     }
 }
 
@@ -188,11 +200,23 @@ impl Firewall for OpenWrt {
         host: IpAddr,
         _reason: &'a str,
     ) -> BoxFuture<'a, Result<(), FirewallError>> {
-        Box::pin(self.guardian("add", host))
+        Box::pin(self.guardian("add", serde_json::json!({ "address": host.to_string() })))
     }
 
     fn release(&self, host: IpAddr) -> BoxFuture<'_, Result<(), FirewallError>> {
-        Box::pin(self.guardian("remove", host))
+        Box::pin(self.guardian("remove", serde_json::json!({ "address": host.to_string() })))
+    }
+
+    fn quarantine_mac<'a>(
+        &'a self,
+        mac: Mac,
+        _reason: &'a str,
+    ) -> BoxFuture<'a, Result<(), FirewallError>> {
+        Box::pin(self.guardian("add_mac", serde_json::json!({ "mac": mac.to_string() })))
+    }
+
+    fn release_mac(&self, mac: Mac) -> BoxFuture<'_, Result<(), FirewallError>> {
+        Box::pin(self.guardian("remove_mac", serde_json::json!({ "mac": mac.to_string() })))
     }
 }
 
@@ -210,6 +234,14 @@ mod tests {
             Err(FirewallError::Rejected(_))
         ));
         assert!(ubus_result(&serde_json::json!({ "error": {} })).is_err());
+    }
+
+    #[test]
+    fn the_plugin_refusal_is_an_error() {
+        assert!(plugin_answer(&serde_json::json!({ "ok": true })).is_ok());
+        assert!(plugin_answer(&serde_json::Value::Null).is_ok());
+        let refused = plugin_answer(&serde_json::json!({ "ok": false, "message": "invalid mac" }));
+        assert!(matches!(refused, Err(FirewallError::Rejected(m)) if m.contains("invalid mac")));
     }
 
     #[test]

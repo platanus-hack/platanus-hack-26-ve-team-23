@@ -42,7 +42,16 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--page); color: var(--ink); font-size: 14px; line-height: 1.45; }
+/* Edge-to-edge on Android 15 draws under the status and navigation bars:
+   keep content inside the safe area. `--inset-top` is a fallback set by
+   app.js for web views that report no inset. */
+body {
+  margin: 0; background: var(--page); color: var(--ink); font-size: 14px; line-height: 1.45;
+  padding: max(env(safe-area-inset-top), var(--inset-top, 0px)) env(safe-area-inset-right)
+    max(env(safe-area-inset-bottom), var(--inset-bottom, 0px)) env(safe-area-inset-left);
+}
+/* Until boot knows whether to show the dashboard or the wizard. */
+body.booting .app { visibility: hidden; }
 h2 { margin: 0; font-size: 14px; font-weight: 600; }
 .muted { color: var(--muted); }
 [hidden] { display: none !important; }
@@ -64,11 +73,18 @@ h2 { margin: 0; font-size: 14px; font-weight: 600; }
 .main { min-width: 0; padding: 0 24px 40px; display: flex; flex-direction: column; gap: 16px; }
 
 @media (max-width: 760px) {
-  .app { grid-template-columns: 1fr; }
-  .nav { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; }
+  .app { grid-template-columns: 1fr; min-height: auto; }
+  .nav { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0; padding: 8px 6px; }
+  .nav a { padding: 6px 8px; }
   .logo { padding: 4px 8px; }
   .nav-foot { margin: 0 0 0 auto; flex-direction: row; align-items: center; }
+  .nav-foot #version { display: none; }
+  /* A glyph instead of the label, so the nav fits one row on a phone; the
+     button keeps its aria-label. */
+  .nav-foot #theme { padding: 3px 9px; font-size: 0; }
+  .nav-foot #theme::after { content: "\25D0"; font-size: 15px; }
   .main { padding: 0 12px 32px; }
+  .core-id { margin-left: 0; }
 }
 
 /* Top bar and filters ------------------------------------------------------ */
@@ -223,6 +239,14 @@ table.data tbody tr:hover td { background: var(--surface-2); }
 .hosts li.host .meta { grid-column: 1 / -1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hosts .host-actions { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
 .hosts .fp { display: block; width: fit-content; white-space: nowrap; margin-top: 3px; font-size: 11px; }
+.host-filter { width: 100%; margin-bottom: 10px; }
+.hosts li.host .ids { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--ink-2); }
+.hosts li.host .ids b { color: var(--muted); font-weight: 500; margin-right: 4px; }
+.hosts li.host .ids code { font-family: ui-monospace, "Cascadia Code", monospace; font-size: 11px; }
+.hosts li.host .warn { grid-column: 1 / -1; font-size: 12px; color: var(--ink); display: flex; gap: 6px; align-items: flex-start; }
+.hosts li.host .warn::before { content: "!"; flex: none; display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: var(--warning); color: #0b0b0b; font-size: 10px; font-weight: 700; margin-top: 1px; }
+.hosts li.host .warn.critical::before { background: var(--critical); color: #fff; }
+.chip.pending::before { content: "?"; background: var(--warning); color: #0b0b0b; }
 
 /* Activation wizard ------------------------------------------------------------ */
 .wizard {
@@ -236,7 +260,8 @@ table.data tbody tr:hover td { background: var(--surface-2); }
 }
 .wizard-head { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
 .small-logo { padding: 0; }
-.steps { list-style: none; margin: 0 0 0 auto; padding: 0; display: flex; gap: 12px; counter-reset: step; font-size: 12px; }
+.steps { list-style: none; margin: 0 0 0 auto; padding: 0; display: flex; flex-wrap: wrap; gap: 12px; counter-reset: step; font-size: 12px; }
+@media (max-width: 560px) { .steps { margin: 0; width: 100%; } }
 .steps li { counter-increment: step; color: var(--muted); display: flex; align-items: center; gap: 6px; }
 .steps li::before { content: counter(step); display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--border); font-size: 11px; }
 .steps li.current { color: var(--ink); font-weight: 600; }
@@ -265,6 +290,7 @@ table.data tbody tr:hover td { background: var(--surface-2); }
   text-align: center; padding: 16px; margin: 8px 0 12px; background: var(--surface-2); border-radius: 8px;
 }
 .big-code { font-size: 40px; letter-spacing: 0.3em; }
+@media (max-width: 560px) { .big-fp { font-size: 19px; letter-spacing: 0.02em; } }
 .big-code:empty { display: none; }
 .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .config { display: flex; flex-direction: column; gap: 10px; }
@@ -272,3 +298,8 @@ table.data tbody tr:hover td { background: var(--surface-2); }
 .router { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
 .wizard-error { margin: 12px 0 0; color: var(--ink); background: color-mix(in srgb, var(--critical) 16%, var(--surface)); border: 1px solid color-mix(in srgb, var(--critical) 45%, transparent); padding: 8px 10px; border-radius: 6px; font-size: 13px; }
 .device { margin: 14px 0 0; font-size: 11px; }
+.manual { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
+.manual label { font-size: 12px; color: var(--ink-2); }
+.manual-row { display: flex; gap: 8px; }
+.manual-row input { flex: 1; min-width: 0; }
+.manual p { margin: 0; }

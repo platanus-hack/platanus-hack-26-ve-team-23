@@ -1,11 +1,14 @@
 #!/bin/sh
-# rpcd exec plugin: the `guardian` ubus object (ADR-0018).
+# rpcd exec plugin: the `guardian` ubus object (ADR-0018, ADR-0028).
 # Install as /usr/libexec/rpcd/guardian (mode 0755), then /etc/init.d/rpcd restart.
 #
 # It only adds, removes and lists IPv4 addresses in the nftables set
-# `guardian_quarantine` defined in /etc/nftables.d/guardian.nft. Nothing else.
+# `guardian_quarantine` and MACs in `guardian_quarantine_mac`, both defined in
+# /etc/nftables.d/guardian.nft. Nothing else. Every value is validated before
+# it reaches nft, and nft is called with separate arguments.
 
 SET="inet fw4 guardian_quarantine"
+MAC_SET="inet fw4 guardian_quarantine_mac"
 
 valid_ipv4() {
 	echo "$1" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || return 1
@@ -14,12 +17,16 @@ valid_ipv4() {
 	done
 }
 
-read_address() {
+valid_mac() {
+	echo "$1" | grep -Eq '^([0-9a-f]{2}:){5}[0-9a-f]{2}$'
+}
+
+read_field() {
 	. /usr/share/libubox/jshn.sh
 	read -r input
 	json_load "$input"
-	json_get_var address address
-	echo "$address"
+	json_get_var value "$1"
+	echo "$value"
 }
 
 reply() {
@@ -28,27 +35,42 @@ reply() {
 
 case "$1" in
 	list)
-		echo '{"add":{"address":"str"},"remove":{"address":"str"},"list":{}}'
+		echo '{"add":{"address":"str"},"remove":{"address":"str"},"add_mac":{"mac":"str"},"remove_mac":{"mac":"str"},"list":{}}'
 		;;
 	call)
 		case "$2" in
 			add)
-				address="$(read_address)"
+				address="$(read_field address)"
 				valid_ipv4 "$address" || { reply false "invalid address"; exit 0; }
 				nft add element $SET "{ $address }" 2>/dev/null
 				logger -t guardian "quarantined $address"
 				reply true "quarantined"
 				;;
 			remove)
-				address="$(read_address)"
+				address="$(read_field address)"
 				valid_ipv4 "$address" || { reply false "invalid address"; exit 0; }
 				nft delete element $SET "{ $address }" 2>/dev/null
 				logger -t guardian "released $address"
 				reply true "released"
 				;;
+			add_mac)
+				mac="$(read_field mac)"
+				valid_mac "$mac" || { reply false "invalid mac"; exit 0; }
+				nft add element $MAC_SET "{ $mac }" 2>/dev/null
+				logger -t guardian "quarantined mac $mac"
+				reply true "quarantined"
+				;;
+			remove_mac)
+				mac="$(read_field mac)"
+				valid_mac "$mac" || { reply false "invalid mac"; exit 0; }
+				nft delete element $MAC_SET "{ $mac }" 2>/dev/null
+				logger -t guardian "released mac $mac"
+				reply true "released"
+				;;
 			list)
-				elements="$(nft -j list set $SET 2>/dev/null)"
-				printf '{"set":%s}\n' "${elements:-null}"
+				addresses="$(nft -j list set $SET 2>/dev/null)"
+				macs="$(nft -j list set $MAC_SET 2>/dev/null)"
+				printf '{"set":%s,"macs":%s}\n' "${addresses:-null}" "${macs:-null}"
 				;;
 		esac
 		;;

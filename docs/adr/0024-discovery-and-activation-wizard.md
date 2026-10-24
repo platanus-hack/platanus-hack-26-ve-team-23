@@ -81,4 +81,9 @@ accepted.
 
 ## History
 
+- v1.1 (2026-10-24): the wizard also takes a typed address ("Not listed?
+  Type its address") for networks where multicast does not reach, such as
+  another VLAN or the Android emulator. The app connects without a pin,
+  shows the fingerprint the handshake proved, and pairing continues as
+  before: the owner compares the fingerprint and the six-digit code.
 - v1.0 (2026-10-24): Initial decision.

@@ -2,11 +2,11 @@
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>HAWK witness</title>
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="booting">
   <div class="app">
     <aside class="nav" aria-label="Sections">
       <div class="logo" aria-label="HAWK">
@@ -89,6 +89,7 @@
 
         <div class="card" id="hosts">
           <div class="card-head"><h2>Hosts</h2><span class="muted" id="host-count"></span></div>
+          <input id="host-filter" class="host-filter" placeholder="Name, IP, MAC, HWID or fingerprint" spellcheck="false" autocomplete="off" aria-label="Filter hosts">
           <ul class="hosts" id="host-list"></ul>
         </div>
       </section>
@@ -148,6 +149,14 @@
           <button id="scan" class="ghost small" type="button">Search again</button>
         </div>
         <ul class="found" id="found"></ul>
+        <form class="manual" id="manual-form">
+          <label for="manual-addr">Not listed? Type its address</label>
+          <div class="manual-row">
+            <input id="manual-addr" placeholder="192.168.88.20" spellcheck="false" autocomplete="off" autocapitalize="off" inputmode="url">
+            <button class="ghost" type="submit" id="manual-go">Connect</button>
+          </div>
+          <p class="muted small">For networks where Cores cannot announce themselves (another VLAN, an emulator). You still check the fingerprint next.</p>
+        </form>
       </section>
 
       <section class="step" data-step="verify" hidden>

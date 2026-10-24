@@ -8,7 +8,11 @@
 //!   owner's signature.
 //! - Every path out of `decide` that is not an explicit `Allow` from the
 //!   detector, recorded in the chain, is a denial (ADR-0003, ADR-0022). An
-//!   unpaired Core denies everything (ADR-0017).
+//!   unpaired Core denies everything (ADR-0017), and so does a host the
+//!   owner has not approved with the HWID it reports (ADR-0029).
+//! - Containment targets the peer's observed IP and MAC, never a value a
+//!   host declares, and follows a contained machine to its new address or
+//!   key (ADR-0028).
 
 use std::{
     net::{IpAddr, SocketAddr},
@@ -16,8 +20,9 @@ use std::{
 };
 
 use detect::Detector;
-use edge_net::quic::PeerId;
+use edge_net::quic::{self, PeerId};
 use guardian_core::{
+    machine::Mac,
     wire::{FirewallConfig, Request, Response},
     Decision, EventKind, Severity, ToolCall,
 };
@@ -25,8 +30,13 @@ use integrations::{sinks::Publisher, Firewall, SinkEvent};
 
 use crate::{
     core::{Core, CoreError, EventMeta, PairRequest},
+    enrolment::Enrolment,
     hosts::Hosts,
 };
+
+/// How the Core learns the MAC of a peer (its neighbour table; a fake in
+/// tests).
+pub type MacResolver = Arc<dyn Fn(IpAddr) -> Option<Mac> + Send + Sync>;
 
 /// Called after pairing or configuration, so the network announcement
 /// carries the new state (ADR-0024).
@@ -40,6 +50,8 @@ pub struct AppState {
     detector: Arc<Mutex<Detector>>,
     announcer: Announcer,
     hosts: Arc<Hosts>,
+    enrolment: Arc<Enrolment>,
+    resolve_mac: MacResolver,
 }
 
 impl std::fmt::Debug for AppState {
@@ -100,19 +112,47 @@ impl AppState {
         publisher: Publisher,
         announcer: Announcer,
     ) -> Self {
+        let enrolment = Arc::new(Enrolment::open(core.dir()));
+        let hosts = Arc::new(Hosts::default());
+        for (peer, hwid) in enrolment.bindings() {
+            hosts.bind(peer, &hwid);
+        }
         Self {
             core: Arc::new(core),
             firewall: Arc::new(RwLock::new(firewall)),
             publisher,
             detector: Arc::new(Mutex::new(detector)),
             announcer,
-            hosts: Arc::new(Hosts::default()),
+            hosts,
+            enrolment,
+            resolve_mac: Arc::new(crate::neighbors::lookup),
         }
     }
 
     #[cfg(test)]
     pub fn core(&self) -> &Core {
         &self.core
+    }
+
+    #[cfg(test)]
+    pub fn with_mac_resolver(mut self, resolve: MacResolver) -> Self {
+        self.resolve_mac = resolve;
+        self
+    }
+
+    /// Whether the owner approved `peer` with the HWID it reports now.
+    fn is_approved(&self, peer: &PeerId) -> bool {
+        let (_, hwid) = self.hosts.identifiers(peer);
+        self.enrolment.is_approved(peer, &hwid)
+    }
+
+    /// The MAC the Core sees for `ip`, read off the async threads.
+    async fn observe_mac(&self, ip: IpAddr) -> Option<Mac> {
+        let resolve = Arc::clone(&self.resolve_mac);
+        tokio::task::spawn_blocking(move || resolve(ip))
+            .await
+            .ok()
+            .flatten()
     }
 
     /// Every authenticated connection is offered here; the witness is not a
@@ -142,7 +182,7 @@ fn core_error(err: &CoreError) -> Response {
 pub async fn handle(state: AppState, peer: PeerId, addr: SocketAddr, req: Request) -> Response {
     match req {
         Request::Hello => Response::Hello {
-            core_public: state.core.public().clone(),
+            core_public: state.core.head_public(),
             paired: state.core.is_paired(),
             config: state.core.config().as_ref().map(crate::core::summary),
         },
@@ -199,6 +239,7 @@ pub async fn handle(state: AppState, peer: PeerId, addr: SocketAddr, req: Reques
         | Request::Events { .. }
         | Request::Hosts
         | Request::Identify { .. }
+        | Request::ApproveHost { .. }
             if !state.is_witness(&peer) =>
         {
             Response::error("only the paired witness may read this Core")
@@ -229,18 +270,29 @@ pub async fn handle(state: AppState, peer: PeerId, addr: SocketAddr, req: Reques
         },
         Request::Decide { call } => {
             state.hosts.seen(&peer);
+            if !state.is_approved(&peer) {
+                tracing::warn!(host = %quic::fingerprint(&peer), %addr, "call from a host the owner has not approved, denying");
+                return Response::Decision {
+                    decision: Decision::deny("host not approved by the owner"),
+                };
+            }
             Response::Decision {
-                decision: decide(&state, &call, Some(addr.ip())).await,
+                decision: decide(&state, &call, peer, addr.ip()).await,
             }
         }
-        Request::HostHello { hostname, os } => {
-            state.hosts.hello(peer, &hostname, &os);
-            tracing::info!(host = %edge_net::quic::fingerprint(&peer), %hostname, %addr, "host connected");
-            Response::Ack
+        Request::HostHello {
+            hostname,
+            os,
+            hwid,
+            nics,
+        } => host_hello(&state, peer, addr.ip(), &hostname, &os, &hwid, nics).await,
+        Request::Hosts => {
+            let enrolment = Arc::clone(&state.enrolment);
+            Response::Hosts {
+                hosts: state.hosts.list(|id, hwid| enrolment.is_approved(id, hwid)),
+            }
         }
-        Request::Hosts => Response::Hosts {
-            hosts: state.hosts.list(),
-        },
+        Request::ApproveHost { approval } => approve_host(&state, approval).await,
         Request::Identify { host } => {
             let Some(id) = hex::decode(&host)
                 .ok()
@@ -258,11 +310,104 @@ pub async fn handle(state: AppState, peer: PeerId, addr: SocketAddr, req: Reques
                 Err(err) => Response::error(err),
             }
         }
-        Request::IdentifySelf { .. } => Response::error("not a host"),
+        Request::IdentifySelf { .. } | Request::Enrolled { .. } => Response::error("not a host"),
     }
 }
 
-async fn decide(state: &AppState, call: &ToolCall, peer: Option<IpAddr>) -> Decision {
+/// A host introduced itself: remember what it says and what the Core sees,
+/// raise an alert if its identifiers do not add up, and contain it again if
+/// it is a contained machine at a new address or with a new key (ADR-0028).
+/// The answer waits for that containment, so a returning host is cut before
+/// it can relay a call.
+async fn host_hello(
+    state: &AppState,
+    peer: PeerId,
+    ip: IpAddr,
+    hostname: &str,
+    os: &str,
+    hwid: &str,
+    nics: Vec<guardian_core::machine::Nic>,
+) -> Response {
+    let mac = state.observe_mac(ip).await;
+    let approval = state.enrolment.approval(&peer);
+    let seen = state
+        .hosts
+        .hello(peer, ip, mac, hostname, os, hwid, nics, approval.as_ref());
+    tracing::info!(host = %quic::fingerprint(&peer), %hostname, %ip, mac = ?mac, approved = state.is_approved(&peer), "host connected");
+    if let Some(conflict) = seen.conflict {
+        tracing::warn!(%conflict, "host identifiers in conflict");
+        alert(
+            state,
+            Severity::High,
+            conflict,
+            serde_json::json!({
+                "host": quic::fingerprint(&peer),
+                "address": ip.to_string(),
+                "hwid": hwid,
+            }),
+        );
+    }
+    if let Some(reason) = seen.recontain {
+        contain(state, Some(peer), Some(ip), reason, None).await;
+    }
+    // A host approved while it was away gets its approval now. Spawned: the
+    // daemon only starts answering once this hello is acknowledged.
+    if let (true, Some(approval), Some(owner)) = (
+        state.is_approved(&peer),
+        approval,
+        state.core.owner_public(),
+    ) {
+        let hosts = Arc::clone(&state.hosts);
+        tokio::spawn(async move {
+            if let Err(err) = hosts.enrolled(&peer, approval, owner).await {
+                tracing::debug!(%err, "approval not handed over on hello");
+            }
+        });
+    }
+    Response::Ack
+}
+
+/// The owner approved a host from the app (ADR-0029): check the signature
+/// against the HWID the host reports now, keep it, record it, and hand it to
+/// the host so it pins this Core and this owner.
+async fn approve_host(state: &AppState, approval: guardian_core::wire::HostApproval) -> Response {
+    let Some(host) = hex::decode(&approval.host)
+        .ok()
+        .and_then(|b| <[u8; 32]>::try_from(b).ok())
+    else {
+        return Response::error("bad host id");
+    };
+    let (_, hwid) = state.hosts.identifiers(&host);
+    if let Err(err) = state.enrolment.approve(&state.core, &approval, &hwid) {
+        return Response::error(err);
+    }
+    state.hosts.bind(host, &hwid);
+    let meta = EventMeta {
+        kind: "enrolled",
+        reason: Some(format!(
+            "host {} approved by the owner",
+            quic::fingerprint(&host)
+        )),
+        ..EventMeta::empty()
+    };
+    let content = serde_json::json!({ "approval": approval });
+    if let Err(err) = state
+        .core
+        .record(EventKind::Configured, meta, &content, true)
+    {
+        tracing::error!(%err, "could not record the approval");
+    }
+    if let Some(owner) = state.core.owner_public() {
+        if let Err(err) = state.hosts.enrolled(&host, approval, owner).await {
+            // The host gets it again in the answer to its next hello.
+            tracing::warn!(%err, "could not hand the approval to the host now");
+        }
+    }
+    tracing::info!(host = %quic::fingerprint(&host), "host approved by the owner");
+    Response::Ack
+}
+
+async fn decide(state: &AppState, call: &ToolCall, peer: PeerId, ip: IpAddr) -> Decision {
     if !state.core.is_paired() {
         return Decision::deny("core not paired");
     }
@@ -288,28 +433,43 @@ async fn decide(state: &AppState, call: &ToolCall, peer: Option<IpAddr>) -> Deci
     // The host to contain is the socket address of the authenticated QUIC
     // peer, never a value the client declares, so a host cannot get another
     // one quarantined.
-    let host = peer.map_or_else(|| "unknown".to_owned(), |ip| ip.to_string());
     state.publisher.send(SinkEvent {
         family: "decisions",
         seq: meta.seq,
         timestamp_ms: meta.timestamp_ms,
-        key: host,
+        key: ip.to_string(),
         body: serde_json::to_value(&meta).unwrap_or_default(),
     });
     if verdict.contain {
-        contain(state, peer, &meta).await;
+        let reason = meta
+            .reason
+            .clone()
+            .unwrap_or_else(|| "critical finding".into());
+        contain(state, Some(peer), Some(ip), reason, Some(meta.seq)).await;
     }
     verdict.decision
 }
 
-/// Quarantines the host on the network firewall and records the outcome.
-async fn contain(state: &AppState, peer: Option<IpAddr>, trigger: &EventMeta) {
+/// Quarantines the host on the network firewall, by its observed IP and,
+/// when the Core sees one, its MAC (ADR-0028); remembers it so the machine
+/// stays contained at a new address; records the outcome.
+async fn contain(
+    state: &AppState,
+    peer: Option<PeerId>,
+    ip: Option<IpAddr>,
+    reason: String,
+    trigger_seq: Option<u64>,
+) {
     let firewall = state.firewall();
-    let reason = trigger
-        .reason
-        .clone()
-        .unwrap_or_else(|| "critical finding".into());
-    let (note, ok) = match peer {
+    let (mut mac, hwid) = peer
+        .map(|p| state.hosts.identifiers(&p))
+        .unwrap_or_default();
+    if mac.is_none() {
+        if let Some(ip) = ip {
+            mac = state.observe_mac(ip).await;
+        }
+    }
+    let (note, ok) = match ip {
         Some(ip) => match firewall.quarantine(ip, &reason).await {
             Ok(()) => ("contained", true),
             Err(err) => {
@@ -319,18 +479,36 @@ async fn contain(state: &AppState, peer: Option<IpAddr>, trigger: &EventMeta) {
         },
         None => ("containment_failed", false),
     };
+    // The MAC is a second selector; the IP containment holds without it.
+    let mac_ok = match mac {
+        Some(m) => match firewall.quarantine_mac(m, &reason).await {
+            Ok(()) => Some(true),
+            Err(err) => {
+                tracing::warn!(%err, mac = %m, "MAC containment not applied");
+                Some(false)
+            }
+        },
+        None => None,
+    };
+    if let Some(ip) = ip {
+        state.hosts.mark_contained(peer, ip, mac);
+    }
     let meta = EventMeta {
         kind: "containment",
-        host: peer.map(|p| p.to_string()),
+        host: ip.map(|p| p.to_string()),
         severity: Some(Severity::Critical),
         reason: Some(format!("{note}: {reason}")),
         ..EventMeta::empty()
     };
     let content = serde_json::json!({
         "firewall": firewall.name(),
-        "host": peer.map(|p| p.to_string()),
+        "host": ip.map(|p| p.to_string()),
+        "mac": mac,
+        "mac_contained": mac_ok,
+        "hwid": hwid,
+        "peer": peer.map(|p| quic::fingerprint(&p)),
         "ok": ok,
-        "trigger_seq": trigger.seq,
+        "trigger_seq": trigger_seq,
     });
     match state
         .core
@@ -340,7 +518,7 @@ async fn contain(state: &AppState, peer: Option<IpAddr>, trigger: &EventMeta) {
             family: "containment",
             seq: meta.seq,
             timestamp_ms: meta.timestamp_ms,
-            key: peer.map_or_else(|| "unknown".into(), |p| p.to_string()),
+            key: ip.map_or_else(|| "unknown".into(), |p| p.to_string()),
             body: serde_json::to_value(&meta).unwrap_or_default(),
         }),
         Err(err) => tracing::error!(%err, "could not record containment"),
@@ -458,13 +636,19 @@ fn apply_remote(state: &AppState, signed: &guardian_core::wire::SignedConfig, ha
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::tests::{pair, TempDir, WITNESS};
+    use crate::core::{
+        now_ms,
+        tests::{pair, pair_with_owner, TempDir, WITNESS},
+    };
+    use crate::enrolment::tests::sign;
     use detect::Rule;
     use guardian_core::wire::CoreConfig;
     use guardian_core::Finding;
     use integrations::dry_run::DryRun;
+    use p256::ecdsa::SigningKey;
 
     const STRANGER: PeerId = [9u8; 32];
+    const HWID: &str = "0123456789abcdef0123456789abcdef";
 
     fn addr() -> SocketAddr {
         "10.0.0.7:5000".parse().unwrap()
@@ -498,6 +682,51 @@ mod tests {
         }
     }
 
+    async fn hello_from(s: &AppState, peer: PeerId, from: SocketAddr, hwid: &str) {
+        let hello = Request::HostHello {
+            hostname: "rig".into(),
+            os: "linux".into(),
+            hwid: hwid.into(),
+            nics: Vec::new(),
+        };
+        assert!(matches!(
+            handle(s.clone(), peer, from, hello).await,
+            Response::Ack
+        ));
+    }
+
+    async fn approve(s: &AppState, owner: &SigningKey, host: PeerId, hwid: &str) -> Response {
+        let approval = sign(owner, s.core(), &host, hwid, now_ms());
+        handle(
+            s.clone(),
+            WITNESS,
+            addr(),
+            Request::ApproveHost { approval },
+        )
+        .await
+    }
+
+    /// Pairs the Core, then introduces `STRANGER` as a host and approves it,
+    /// the way the phone would. Returns the owner key.
+    async fn pair_and_enroll(s: &AppState) -> SigningKey {
+        let (_, owner) = pair_with_owner(s.core());
+        hello_from(s, STRANGER, addr(), HWID).await;
+        assert!(matches!(
+            approve(s, &owner, STRANGER, HWID).await,
+            Response::Ack
+        ));
+        owner
+    }
+
+    fn kinds(s: &AppState) -> Vec<&'static str> {
+        s.core()
+            .events_since(None)
+            .unwrap()
+            .iter()
+            .map(|e| e.kind)
+            .collect()
+    }
+
     #[tokio::test]
     async fn unpaired_core_denies_and_offers_pairing() {
         let dir = TempDir::new("api-unpaired");
@@ -513,14 +742,15 @@ mod tests {
     async fn only_the_paired_witness_reads_the_record() {
         let dir = TempDir::new("api-witness");
         let s = state_with(&dir, Detector::new(), Arc::new(DryRun::default()));
-        pair(s.core());
+        pair_and_enroll(&s).await;
         assert!(decide_req(&s, bash("ls")).await.is_allow());
 
         let stranger = handle(s.clone(), STRANGER, addr(), Request::Events { since: None }).await;
         assert!(matches!(stranger, Response::Error { .. }));
 
+        // Paired, the host enrolled, one decision.
         match handle(s.clone(), WITNESS, addr(), Request::Events { since: None }).await {
-            Response::Events { events } => assert_eq!(events.len(), 2),
+            Response::Events { events } => assert_eq!(events.len(), 3),
             other => panic!("unexpected {other:?}"),
         }
         assert!(matches!(
@@ -590,12 +820,183 @@ mod tests {
             Detector::with_rules(vec![Box::new(Critical)]),
             firewall.clone(),
         );
-        pair(s.core());
+        pair_and_enroll(&s).await;
         let peer = addr().ip();
         assert!(decide_req(&s, bash("ls")).await.is_allow());
         assert!(!firewall.is_quarantined(peer));
         assert!(!decide_req(&s, bash("CRITICAL")).await.is_allow());
         assert!(firewall.is_quarantined(peer));
+    }
+
+    const OBSERVED: &str = "52:54:00:12:34:56";
+
+    /// A Core on a LAN: the peer at `addr()` has a MAC in the neighbour
+    /// table, every other address has none.
+    fn on_lan(s: AppState) -> AppState {
+        s.with_mac_resolver(Arc::new(|ip: IpAddr| {
+            (ip == addr().ip()).then(|| Mac::parse(OBSERVED)).flatten()
+        }))
+    }
+
+    #[tokio::test]
+    async fn a_host_the_owner_has_not_approved_is_denied() {
+        let dir = TempDir::new("api-enrol");
+        let s = state_with(&dir, Detector::new(), Arc::new(DryRun::default()));
+        let (_, owner) = pair_with_owner(s.core());
+        hello_from(&s, STRANGER, addr(), HWID).await;
+        let denied = decide_req(&s, bash("ls")).await;
+        assert!(matches!(denied, Decision::Deny { ref reason } if reason.contains("not approved")));
+
+        // The host cannot approve itself, and the approval must name the
+        // HWID the host reports.
+        let approval = sign(&owner, s.core(), &STRANGER, HWID, now_ms());
+        assert!(matches!(
+            handle(
+                s.clone(),
+                STRANGER,
+                addr(),
+                Request::ApproveHost { approval }
+            )
+            .await,
+            Response::Error { .. }
+        ));
+        let other = "ffffffffffffffffffffffffffffffff";
+        assert!(matches!(
+            approve(&s, &owner, STRANGER, other).await,
+            Response::Error { .. }
+        ));
+        assert!(!decide_req(&s, bash("ls")).await.is_allow());
+
+        assert!(matches!(
+            approve(&s, &owner, STRANGER, HWID).await,
+            Response::Ack
+        ));
+        assert!(decide_req(&s, bash("ls")).await.is_allow());
+        assert!(kinds(&s).contains(&"enrolled"));
+    }
+
+    #[tokio::test]
+    async fn the_approved_key_on_another_machine_is_denied_and_alerted() {
+        let dir = TempDir::new("api-copied-key");
+        let s = state_with(&dir, Detector::new(), Arc::new(DryRun::default()));
+        pair_and_enroll(&s).await;
+        assert!(decide_req(&s, bash("ls")).await.is_allow());
+        // The same key now reports another machine's HWID.
+        hello_from(&s, STRANGER, addr(), "ffffffffffffffffffffffffffffffff").await;
+        assert!(!decide_req(&s, bash("ls")).await.is_allow());
+        assert!(kinds(&s).contains(&"alert"));
+    }
+
+    #[tokio::test]
+    async fn the_witness_sees_hwid_mac_and_approval() {
+        let dir = TempDir::new("api-host-ids");
+        let s = on_lan(state_with(
+            &dir,
+            Detector::new(),
+            Arc::new(DryRun::default()),
+        ));
+        pair_and_enroll(&s).await;
+        let hosts = match handle(s.clone(), WITNESS, addr(), Request::Hosts).await {
+            Response::Hosts { hosts } => hosts,
+            other => panic!("unexpected {other:?}"),
+        };
+        assert_eq!(hosts.len(), 1);
+        assert_eq!(hosts[0].hwid, HWID);
+        assert_eq!(hosts[0].mac, Mac::parse(OBSERVED));
+        assert!(hosts[0].approved);
+        assert!(!hosts[0].contained);
+        assert!(hosts[0].conflict.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_critical_finding_quarantines_the_ip_and_the_observed_mac() {
+        let dir = TempDir::new("api-contain-mac");
+        let firewall = Arc::new(DryRun::default());
+        let s = on_lan(state_with(
+            &dir,
+            Detector::with_rules(vec![Box::new(Critical)]),
+            firewall.clone(),
+        ));
+        pair_and_enroll(&s).await;
+        assert!(!decide_req(&s, bash("CRITICAL")).await.is_allow());
+        assert!(firewall.is_quarantined(addr().ip()));
+        assert!(firewall.is_mac_quarantined(Mac::parse(OBSERVED).unwrap()));
+    }
+
+    #[tokio::test]
+    async fn a_contained_host_is_contained_again_at_its_new_address() {
+        let dir = TempDir::new("api-sticky-ip");
+        let firewall = Arc::new(DryRun::default());
+        let s = state_with(
+            &dir,
+            Detector::with_rules(vec![Box::new(Critical)]),
+            firewall.clone(),
+        );
+        pair_and_enroll(&s).await;
+        assert!(!decide_req(&s, bash("CRITICAL")).await.is_allow());
+        let moved: SocketAddr = "10.0.0.99:5000".parse().unwrap();
+        assert!(!firewall.is_quarantined(moved.ip()));
+        hello_from(&s, STRANGER, moved, HWID).await;
+        assert!(firewall.is_quarantined(moved.ip()));
+    }
+
+    #[tokio::test]
+    async fn a_new_daemon_key_on_a_contained_machine_is_contained_and_alerted() {
+        let dir = TempDir::new("api-sticky-rekey");
+        let firewall = Arc::new(DryRun::default());
+        let s = state_with(
+            &dir,
+            Detector::with_rules(vec![Box::new(Critical)]),
+            firewall.clone(),
+        );
+        pair_and_enroll(&s).await;
+        assert!(!decide_req(&s, bash("CRITICAL")).await.is_allow());
+        // The agent deletes the daemon key and comes back from a new address.
+        let rekeyed: PeerId = [11u8; 32];
+        let from: SocketAddr = "10.0.0.50:5000".parse().unwrap();
+        hello_from(&s, rekeyed, from, HWID).await;
+        assert!(firewall.is_quarantined(from.ip()));
+        assert!(kinds(&s).contains(&"alert"));
+        // And it is not approved: the approval was for the old key.
+        let call = Request::Decide { call: bash("ls") };
+        assert!(matches!(
+            handle(s.clone(), rekeyed, from, call).await,
+            Response::Decision {
+                decision: Decision::Deny { .. }
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_forged_hwid_cannot_get_another_machine_contained() {
+        let dir = TempDir::new("api-forged-hwid");
+        let firewall = Arc::new(DryRun::default());
+        let s = state_with(
+            &dir,
+            Detector::with_rules(vec![Box::new(Critical)]),
+            firewall.clone(),
+        );
+        let owner = pair_and_enroll(&s).await;
+        // An approved attacker claims the victim's HWID, then gets contained.
+        let attacker: PeerId = [12u8; 32];
+        let at: SocketAddr = "10.0.0.66:5000".parse().unwrap();
+        hello_from(&s, attacker, at, "ffffffffffffffffffffffffffffffff").await;
+        assert!(matches!(
+            approve(&s, &owner, attacker, "ffffffffffffffffffffffffffffffff").await,
+            Response::Ack
+        ));
+        hello_from(&s, attacker, at, HWID).await;
+        let critical = Request::Decide {
+            call: bash("CRITICAL"),
+        };
+        let _ = handle(s.clone(), attacker, at, critical).await;
+        // Its call was denied as not approved (another HWID): nothing cut.
+        // Even contained by hand, the victim's HWID stays out of the set.
+        contain(&s, Some(attacker), Some(at.ip()), "test".into(), None).await;
+        assert!(firewall.is_quarantined(at.ip()));
+        let victim_moved: SocketAddr = "10.0.0.70:5000".parse().unwrap();
+        hello_from(&s, STRANGER, victim_moved, HWID).await;
+        assert!(!firewall.is_quarantined(victim_moved.ip()));
     }
 
     #[tokio::test]
@@ -608,7 +1009,7 @@ mod tests {
         pair(s.core());
 
         // The Core on a real QUIC endpoint.
-        let core_key = s.core().keys().transport_key().clone();
+        let core_key = s.core().transport_key().clone();
         let identity = quic::TlsIdentity::from_signing_key(&core_key, "hawk-core").unwrap();
         let endpoint = quic::server(&identity, "127.0.0.1:0".parse().unwrap()).unwrap();
         let core_addr = endpoint.local_addr().unwrap();
@@ -647,6 +1048,8 @@ mod tests {
         let hello = Request::HostHello {
             hostname: "rig-07".into(),
             os: "linux".into(),
+            hwid: HWID.into(),
+            nics: Vec::new(),
         };
         let _: Response = quic::request(&conn, &hello, std::time::Duration::from_secs(5))
             .await

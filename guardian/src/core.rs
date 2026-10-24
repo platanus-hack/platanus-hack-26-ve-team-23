@@ -70,10 +70,19 @@ impl std::fmt::Display for CoreError {
 
 impl std::error::Error for CoreError {}
 
+/// The head-signing keys, written when the Core is activated (ADR-0030).
+/// A Core from before ADR-0030 wrote this at first boot and used its
+/// Ed25519 seed as the transport identity too.
 #[derive(Serialize, Deserialize)]
 struct KeyFile {
     ed25519_seed: String,
     ml_dsa_65_seed: String,
+}
+
+/// The transport identity, written at first boot (ADR-0030).
+#[derive(Serialize, Deserialize)]
+struct TransportFile {
+    ed25519_seed: String,
 }
 
 /// What the Core stores after pairing.
@@ -94,12 +103,13 @@ pub struct PairingRecord {
 pub struct PairRequest {
     pub owner_public: String,
     pub epoch_public: String,
-    /// ECDSA P-256 signature (DER, hex) over
-    /// `guardian.pair.v1 || nonce || core Ed25519 public key`.
+    /// ECDSA P-256 signature (DER, hex) over `pairing::pair_message`: the
+    /// nonce, the transport identity, the head keys offered and the app.
     pub signature: String,
 }
 
-/// What a new Core offers to the phone.
+/// What a dormant Core offers to the phone: the head keys it generated for
+/// this activation and a one-time nonce.
 #[derive(Debug, Clone, Serialize)]
 pub struct PairOffer {
     pub core_public: CorePublic,
@@ -130,12 +140,20 @@ pub struct Status {
 }
 
 enum Pairing {
-    Unpaired { nonce: [u8; 32] },
+    /// Dormant. `pending` holds the seeds of the head keys generated when
+    /// the wizard asked for the offer; they are kept only in memory until
+    /// the owner's signature over them arrives.
+    Unpaired {
+        nonce: [u8; 32],
+        pending: Option<([u8; 32], [u8; 32])>,
+    },
     Paired(PairingRecord),
 }
 
 struct Inner {
     pairing: Pairing,
+    /// The head-signing keys, from activation on.
+    head: Option<(CoreKeys, CorePublic)>,
     chain: HashChain,
     events: File,
     heads: Vec<SignedHead>,
@@ -146,8 +164,9 @@ struct Inner {
 }
 
 pub struct Core {
-    keys: CoreKeys,
-    public: CorePublic,
+    /// The transport identity (ADR-0023), from first boot.
+    transport: ed25519_dalek::SigningKey,
+    id: [u8; 32],
     dir: PathBuf,
     inner: Mutex<Inner>,
     /// Off-site archive of every signed batch, when configured (ADR-0026).
@@ -182,26 +201,48 @@ fn hex32(text: &str, what: &'static str) -> Result<[u8; 32], CoreError> {
         .ok_or(CoreError::Corrupt(what))
 }
 
-fn load_or_create_keys(dir: &Path) -> Result<CoreKeys, CoreError> {
-    let path = dir.join("keys.json");
+/// The transport identity: created at first boot, or the Ed25519 seed of a
+/// Core from before ADR-0030 (one key for both roles).
+fn load_or_create_transport(dir: &Path) -> Result<ed25519_dalek::SigningKey, CoreError> {
+    let path = dir.join("transport.json");
     if path.exists() {
-        let file: KeyFile = serde_json::from_slice(&fs::read(&path)?)
-            .map_err(|_| CoreError::Corrupt("keys.json"))?;
-        return Ok(CoreKeys::from_seeds(
-            &hex32(&file.ed25519_seed, "keys.json")?,
-            &hex32(&file.ml_dsa_65_seed, "keys.json")?,
-        ));
+        let file: TransportFile = serde_json::from_slice(&fs::read(&path)?)
+            .map_err(|_| CoreError::Corrupt("transport.json"))?;
+        return Ok(ed25519_dalek::SigningKey::from_bytes(&hex32(
+            &file.ed25519_seed,
+            "transport.json",
+        )?));
     }
-    let (ed, pq) = (random32(), random32());
-    let file = KeyFile {
-        ed25519_seed: hex::encode(ed),
-        ml_dsa_65_seed: hex::encode(pq),
+    let legacy = dir.join("keys.json");
+    let seed = if legacy.exists() {
+        let file: KeyFile = serde_json::from_slice(&fs::read(&legacy)?)
+            .map_err(|_| CoreError::Corrupt("keys.json"))?;
+        hex32(&file.ed25519_seed, "keys.json")?
+    } else {
+        random32()
+    };
+    let file = TransportFile {
+        ed25519_seed: hex::encode(seed),
     };
     write_private(
         &path,
-        &serde_json::to_vec_pretty(&file).map_err(|_| CoreError::Corrupt("keys"))?,
+        &serde_json::to_vec_pretty(&file).map_err(|_| CoreError::Corrupt("transport"))?,
     )?;
-    Ok(CoreKeys::from_seeds(&ed, &pq))
+    Ok(ed25519_dalek::SigningKey::from_bytes(&seed))
+}
+
+/// The head keys written at activation, if any.
+fn load_head_keys(dir: &Path) -> Result<Option<CoreKeys>, CoreError> {
+    let path = dir.join("keys.json");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let file: KeyFile =
+        serde_json::from_slice(&fs::read(&path)?).map_err(|_| CoreError::Corrupt("keys.json"))?;
+    Ok(Some(CoreKeys::from_seeds(
+        &hex32(&file.ed25519_seed, "keys.json")?,
+        &hex32(&file.ml_dsa_65_seed, "keys.json")?,
+    )))
 }
 
 /// Writes a file readable only by the Core's user where the OS supports it.
@@ -302,17 +343,29 @@ impl Core {
     pub fn open(dir: impl Into<PathBuf>) -> Result<Self, CoreError> {
         let dir = dir.into();
         fs::create_dir_all(&dir)?;
-        let keys = load_or_create_keys(&dir)?;
-        let public = keys.public();
+        // First moment: only the transport identity, so the Core can be
+        // discovered and reached over QUIC while it waits for the app.
+        let transport = load_or_create_transport(&dir)?;
+        let id = transport.verifying_key().to_bytes();
 
         let pairing_path = dir.join("pairing.json");
-        let pairing = if pairing_path.exists() {
-            Pairing::Paired(
-                serde_json::from_slice(&fs::read(&pairing_path)?)
-                    .map_err(|_| CoreError::Corrupt("pairing.json"))?,
-            )
+        let (pairing, head) = if pairing_path.exists() {
+            let record: PairingRecord = serde_json::from_slice(&fs::read(&pairing_path)?)
+                .map_err(|_| CoreError::Corrupt("pairing.json"))?;
+            let keys = load_head_keys(&dir)?
+                .ok_or(CoreError::Corrupt("a paired Core without keys.json"))?;
+            let public = keys.public();
+            (Pairing::Paired(record), Some((keys, public)))
         } else {
-            Pairing::Unpaired { nonce: random32() }
+            // Dormant: head keys of an older first boot, if any, are not
+            // used; activation generates new ones.
+            (
+                Pairing::Unpaired {
+                    nonce: random32(),
+                    pending: None,
+                },
+                None,
+            )
         };
 
         let heads = load_heads(&dir.join("heads.jsonl"))?;
@@ -324,11 +377,12 @@ impl Core {
             .open(&events_path)?;
 
         Ok(Self {
-            keys,
-            public,
+            transport,
+            id,
             dir,
             inner: Mutex::new(Inner {
                 pairing,
+                head,
                 chain,
                 events,
                 heads,
@@ -350,8 +404,32 @@ impl Core {
             .map_err(|_| CoreError::Corrupt("state lock poisoned"))
     }
 
-    pub fn public(&self) -> &CorePublic {
-        &self.public
+    /// The transport identity (Ed25519 public key): what the app and the
+    /// daemons pin and what discovery announces.
+    pub fn id(&self) -> [u8; 32] {
+        self.id
+    }
+
+    pub fn transport_key(&self) -> &ed25519_dalek::SigningKey {
+        &self.transport
+    }
+
+    /// The head keys, once the owner's app activated the Core (ADR-0030).
+    pub fn head_public(&self) -> Option<CorePublic> {
+        self.lock().ok()?.head.as_ref().map(|(_, p)| p.clone())
+    }
+
+    /// Where the Core keeps its state.
+    pub fn dir(&self) -> &Path {
+        &self.dir
+    }
+
+    /// The paired owner's public key (P-256 SEC1, hex).
+    pub fn owner_public(&self) -> Option<String> {
+        match &self.lock().ok()?.pairing {
+            Pairing::Paired(record) => Some(record.owner_public.clone()),
+            Pairing::Unpaired { .. } => None,
+        }
     }
 
     /// The witness identity bound at pairing.
@@ -361,10 +439,6 @@ impl Core {
             Pairing::Paired(record) => hex32(&record.witness_id, "witness").ok(),
             Pairing::Unpaired { .. } => None,
         }
-    }
-
-    pub fn keys(&self) -> &CoreKeys {
-        &self.keys
     }
 
     /// The owner's configuration, if any (ADR-0024).
@@ -474,12 +548,20 @@ impl Core {
             .unwrap_or(false)
     }
 
+    /// The wizard starts the activation (ADR-0030): the second moment. The
+    /// Core generates its head keys now, once per boot, and offers their
+    /// public half with a one-time nonce. Nothing is written until the
+    /// owner's signature over them arrives.
     pub fn pair_offer(&self) -> Result<PairOffer, CoreError> {
-        match &self.lock()?.pairing {
-            Pairing::Unpaired { nonce } => Ok(PairOffer {
-                core_public: self.public.clone(),
-                nonce: hex::encode(nonce),
-            }),
+        let mut inner = self.lock()?;
+        match &mut inner.pairing {
+            Pairing::Unpaired { nonce, pending } => {
+                let (ed, pq) = *pending.get_or_insert_with(|| (random32(), random32()));
+                Ok(PairOffer {
+                    core_public: CoreKeys::from_seeds(&ed, &pq).public(),
+                    nonce: hex::encode(nonce),
+                })
+            }
             Pairing::Paired(_) => Err(CoreError::AlreadyPaired),
         }
     }
@@ -488,9 +570,13 @@ impl Core {
     /// Returns the confirmation code.
     pub fn pair(&self, request: &PairRequest, witness_id: &[u8; 32]) -> Result<String, CoreError> {
         let mut inner = self.lock()?;
-        let Pairing::Unpaired { nonce } = &inner.pairing else {
+        let Pairing::Unpaired { nonce, pending } = &inner.pairing else {
             return Err(CoreError::AlreadyPaired);
         };
+        let (ed_seed, pq_seed) =
+            pending.ok_or(CoreError::BadPairing("ask for the pairing offer first"))?;
+        let head = CoreKeys::from_seeds(&ed_seed, &pq_seed);
+        let head_public = head.public();
         let owner = hex::decode(&request.owner_public)
             .map_err(|_| CoreError::BadPairing("owner key not hex"))?;
         let owner_key = VerifyingKey::from_sec1_bytes(&owner)
@@ -502,10 +588,21 @@ impl Core {
             .and_then(|der| Signature::from_der(&der).ok())
             .ok_or(CoreError::BadPairing("signature not DER"))?;
 
-        let message = pair_message(nonce, &self.public.ed25519, witness_id);
+        let message = pair_message(nonce, &self.id, &head_public, witness_id);
         owner_key
             .verify(&message, &signature)
             .map_err(|_| CoreError::BadPairing("signature does not verify"))?;
+
+        // The head keys are written first: a Core is never paired without
+        // the keys the owner signed for.
+        let key_file = KeyFile {
+            ed25519_seed: hex::encode(ed_seed),
+            ml_dsa_65_seed: hex::encode(pq_seed),
+        };
+        write_private(
+            &self.dir.join("keys.json"),
+            &serde_json::to_vec_pretty(&key_file).map_err(|_| CoreError::Corrupt("keys"))?,
+        )?;
 
         let record = PairingRecord {
             owner_public: request.owner_public.clone(),
@@ -518,7 +615,8 @@ impl Core {
             &serde_json::to_vec_pretty(&record).map_err(|_| CoreError::Corrupt("pairing"))?,
         )?;
         inner.pairing = Pairing::Paired(record);
-        let code = confirmation_code(&self.public.ed25519, &owner);
+        let code = confirmation_code(&self.id, &head_public, &owner);
+        inner.head = Some((head, head_public));
 
         let meta = EventMeta {
             kind: "paired",
@@ -602,8 +700,9 @@ impl Core {
         if urgent || inner.batch.len() as u64 >= EVENTS_PER_HEAD {
             let first_seq = inner.batch.first().map_or(event.seq, |e| e.seq);
             let leaves: Vec<_> = inner.batch.iter().map(merkle::leaf_hash).collect();
+            let (keys, _) = inner.head.as_ref().ok_or(CoreError::NotPaired)?;
             let signed = SignedHead::sign(
-                &self.keys,
+                keys,
                 first_seq,
                 event.seq,
                 event.timestamp_ms,
@@ -759,7 +858,8 @@ pub(crate) mod tests {
         let offer = core.pair_offer().unwrap();
         let message = pair_message(
             &hex::decode(&offer.nonce).unwrap(),
-            &offer.core_public.ed25519,
+            &core.id(),
+            &offer.core_public,
             &WITNESS,
         );
         let signature: Signature = owner.sign(&message);
@@ -829,6 +929,105 @@ pub(crate) mod tests {
         assert!(!core.is_paired());
     }
 
+    /// ADR-0030: the transport identity at first boot, the head keys only
+    /// when the wizard activates the Core, written only once the owner
+    /// signed for them.
+    #[test]
+    fn head_keys_are_born_at_activation_not_at_boot() {
+        let dir = TempDir::new("two-moments");
+        let core = Core::open(&dir.0).unwrap();
+        let id = core.id();
+        assert!(dir.0.join("transport.json").exists());
+        assert!(!dir.0.join("keys.json").exists());
+        assert!(core.head_public().is_none());
+
+        // The wizard asks for the offer: keys exist in memory only, and the
+        // same ones are offered again until pairing.
+        let offer = core.pair_offer().unwrap();
+        assert_eq!(core.pair_offer().unwrap().core_public, offer.core_public);
+        assert!(!dir.0.join("keys.json").exists());
+        assert_ne!(offer.core_public.ed25519, id.to_vec());
+
+        pair(&core);
+        assert!(dir.0.join("keys.json").exists());
+        assert_eq!(core.head_public(), Some(offer.core_public.clone()));
+        drop(core);
+
+        // A restart keeps both identities.
+        let core = Core::open(&dir.0).unwrap();
+        assert_eq!(core.id(), id);
+        assert_eq!(core.head_public(), Some(offer.core_public));
+    }
+
+    #[test]
+    fn pairing_needs_the_offer_and_a_signature_over_its_head_keys() {
+        let dir = TempDir::new("pair-head");
+        let core = Core::open(&dir.0).unwrap();
+        let owner = SigningKey::random(&mut OsRng);
+        let owner_public = hex::encode(owner.verifying_key().to_encoded_point(true).as_bytes());
+        let request = |signature: Signature| PairRequest {
+            owner_public: owner_public.clone(),
+            epoch_public: hex::encode(seal::epoch_public(&random32())),
+            signature: hex::encode(signature.to_der().as_bytes()),
+        };
+        // No offer asked yet: nothing to sign for.
+        let early: Signature = owner.sign(b"anything");
+        assert!(matches!(
+            core.pair(&request(early), &WITNESS),
+            Err(CoreError::BadPairing(_))
+        ));
+
+        // Signed over other head keys than the ones offered.
+        let offer = core.pair_offer().unwrap();
+        let nonce = hex::decode(&offer.nonce).unwrap();
+        let other = CoreKeys::from_seeds(&[7; 32], &[7; 32]).public();
+        let wrong: Signature = owner.sign(&pair_message(&nonce, &core.id(), &other, &WITNESS));
+        assert!(core.pair(&request(wrong), &WITNESS).is_err());
+        assert!(!dir.0.join("keys.json").exists());
+
+        let right: Signature = owner.sign(&pair_message(
+            &nonce,
+            &core.id(),
+            &offer.core_public,
+            &WITNESS,
+        ));
+        assert!(core.pair(&request(right), &WITNESS).is_ok());
+        assert!(core.is_paired());
+    }
+
+    /// A Core from before ADR-0030 used one Ed25519 key for both roles: it
+    /// keeps its identity and its pinned head keys.
+    #[test]
+    fn a_core_from_before_two_moments_keeps_its_keys() {
+        let dir = TempDir::new("legacy-keys");
+        let (ed, pq) = ([3u8; 32], [4u8; 32]);
+        fs::create_dir_all(&dir.0).unwrap();
+        fs::write(
+            dir.0.join("keys.json"),
+            serde_json::to_vec(&KeyFile {
+                ed25519_seed: hex::encode(ed),
+                ml_dsa_65_seed: hex::encode(pq),
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            dir.0.join("pairing.json"),
+            serde_json::to_vec(&PairingRecord {
+                owner_public: "02".into(),
+                epoch_public: hex::encode([0u8; 32]),
+                paired_at_ms: 1,
+                witness_id: hex::encode(WITNESS),
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        let core = Core::open(&dir.0).unwrap();
+        let legacy = CoreKeys::from_seeds(&ed, &pq).public();
+        assert_eq!(core.id().to_vec(), legacy.ed25519);
+        assert_eq!(core.head_public(), Some(legacy));
+    }
+
     #[test]
     fn records_are_sealed_chained_signed_and_survive_restart() {
         let dir = TempDir::new("record");
@@ -837,7 +1036,7 @@ pub(crate) mod tests {
         {
             let core = Core::open(&dir.0).unwrap();
             epoch_secret = pair(&core);
-            public = core.public().clone();
+            public = core.head_public().unwrap();
             core.record_decision(&call(), &verdict(None)).unwrap();
             core.record_decision(&call(), &verdict(Some(Severity::High)))
                 .unwrap();
@@ -877,8 +1076,8 @@ pub(crate) mod tests {
     fn heads_cover_contiguous_batches_and_prove_their_events() {
         let dir = TempDir::new("merkle");
         let core = Core::open(&dir.0).unwrap();
-        let public = core.public().clone();
         pair(&core);
+        let public = core.head_public().unwrap();
         for _ in 0..12 {
             core.record_decision(&call(), &verdict(None)).unwrap();
         }

@@ -4,7 +4,9 @@
 //! The app talks to its Core only over QUIC with mutual TLS (ADR-0023): the
 //! app has its own device identity, the Core's identity is pinned at pairing,
 //! and the owner's signature binds that pair (ADR-0017). Cores are found on
-//! the network by mDNS; the owner never types an address (ADR-0024).
+//! the network by mDNS (ADR-0024); where multicast does not reach (another
+//! VLAN, an emulator) the owner may type the address, and the fingerprint
+//! and the six-digit code still decide.
 //!
 //! Keys live in the app's data directory for the desktop build and the demo:
 //! `device.key` (Ed25519, transport identity), `owner.key` (P-256, owner
@@ -26,7 +28,10 @@ use edge_net::{
 use guardian_core::{
     pairing::{confirmation_code, pair_message},
     seal,
-    wire::{configure_message, CoreConfig, FirewallConfig, HostInfo, Request, Response},
+    wire::{
+        approve_message, configure_message, CoreConfig, FirewallConfig, HostApproval, HostInfo,
+        Request, Response,
+    },
     CorePublic, SignedHead,
 };
 use p256::ecdsa::{signature::Signer as _, Signature, SigningKey};
@@ -289,6 +294,44 @@ pub async fn discover() -> Result<Vec<Discovered>, String> {
     Ok(out)
 }
 
+/// A Core at an address the owner typed, for networks where discovery does
+/// not reach (ADR-0024 v1.1). Nothing is trusted yet: the owner still
+/// compares the fingerprint, and pairing pins the key the handshake proved.
+#[tauri::command]
+pub async fn probe_core(app: tauri::AppHandle, address: String) -> Result<Discovered, String> {
+    let dir = data_dir(&app)?;
+    let addr = parse_address(&address)?;
+    let (conn, id) = client(&dir)?.connect(addr, None).await?;
+    // The identity is the key the handshake proved; head keys come only at
+    // activation (ADR-0030).
+    let (paired, config) = match call(&conn, &Request::Hello).await? {
+        Response::Hello { paired, config, .. } => (paired, config),
+        other => return Err(format!("unexpected answer: {other:?}")),
+    };
+    conn.close(0u32.into(), b"probe");
+    Ok(Discovered {
+        fingerprint: quic::fingerprint(&id),
+        name: config.map(|c| c.name).unwrap_or_else(|| "HAWK Core".into()),
+        state: if paired { "active" } else { "unpaired" }.into(),
+        address: addr.to_string(),
+        id: hex::encode(id),
+    })
+}
+
+/// `ip:port`, or an IP alone with the Core's default port.
+fn parse_address(text: &str) -> Result<SocketAddr, String> {
+    let text = text.trim();
+    text.parse::<SocketAddr>()
+        .or_else(|_| {
+            text.parse::<std::net::IpAddr>()
+                .map(|ip| SocketAddr::new(ip, CORE_PORT))
+        })
+        .map_err(|_| "type an address like 192.168.88.20 or 192.168.88.20:7443".into())
+}
+
+/// The Core's QUIC port when the owner types only an address.
+const CORE_PORT: u16 = 7443;
+
 /// Pairs this app with an unpaired Core (ADR-0017). The handshake proves the
 /// Core holds the key it announced; the owner's signature covers the Core's
 /// identity, the offer nonce and this app's device identity.
@@ -312,15 +355,18 @@ pub async fn pair_core(
         Response::Offer { core_public, nonce } => (core_public, nonce),
         other => return Err(format!("unexpected answer: {other:?}")),
     };
-    if core_public.ed25519 != core_id {
-        return Err("the Core's identity does not match the one it announced".into());
+    // The head keys the Core generated for this activation (ADR-0030): the
+    // owner's signature covers them, and the app pins them for the heads.
+    if core_public.ed25519.len() != 32 || core_public.ml_dsa_65.len() != 1952 {
+        return Err("the Core offered malformed head keys".into());
     }
     let nonce = hex::decode(&nonce).map_err(|_| "the Core sent a bad nonce")?;
     let owner = owner_key(&dir)?;
     let epoch = secret32(&dir, "epoch.key")?;
     let owner_public = owner.verifying_key().to_encoded_point(true);
     let device_id = device.verifying_key().to_bytes();
-    let signature: Signature = owner.sign(&pair_message(&nonce, &core_public.ed25519, &device_id));
+    let signature: Signature =
+        owner.sign(&pair_message(&nonce, &core_id, &core_public, &device_id));
 
     let request = Request::Pair {
         owner_public: hex::encode(owner_public.as_bytes()),
@@ -331,7 +377,7 @@ pub async fn pair_core(
         Response::Paired { confirmation_code } => confirmation_code,
         other => return Err(format!("unexpected answer: {other:?}")),
     };
-    let expected = confirmation_code(&core_public.ed25519, owner_public.as_bytes());
+    let expected = confirmation_code(&core_id, &core_public, owner_public.as_bytes());
     if code != expected {
         return Err("confirmation codes differ: someone may be in the middle".into());
     }
@@ -409,6 +455,47 @@ pub async fn identify_host(
     let dir = data_dir(&app)?;
     let conn = connect(&dir, &link).await?;
     match call(&conn, &Request::Identify { host }).await? {
+        Response::Ack => Ok(()),
+        other => Err(format!("unexpected answer: {other:?}")),
+    }
+}
+
+/// Approves a host for this Core with the owner's signature over the Core,
+/// the host's daemon identity, the HWID it reports and the time (ADR-0029).
+/// The Core then decides for it, and the host pins this Core and owner.
+#[tauri::command]
+pub async fn approve_host(
+    app: tauri::AppHandle,
+    link: State<'_, Link>,
+    host: String,
+    hwid: String,
+) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    if pinned(&dir).is_none() {
+        return Err("this app is not paired with a Core".into());
+    }
+    // The Core's transport identity, the one the daemons pin.
+    let core = parse_id(
+        &remembered(&dir)
+            .ok_or("this app is not paired with a Core")?
+            .id,
+    )?;
+    let host_id = parse_id(&host)?;
+    let timestamp_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis() as u64;
+    let signature: Signature =
+        owner_key(&dir)?.sign(&approve_message(&core, &host_id, &hwid, timestamp_ms));
+    let approval = HostApproval {
+        core: hex::encode(core),
+        host,
+        hwid,
+        timestamp_ms,
+        signature: hex::encode(signature.to_der().as_bytes()),
+    };
+    let conn = connect(&dir, &link).await?;
+    match call(&conn, &Request::ApproveHost { approval }).await? {
         Response::Ack => Ok(()),
         other => Err(format!("unexpected answer: {other:?}")),
     }

@@ -112,3 +112,6 @@ is dropped. Adapters behind one trait:
 - v1.1 (2026-10-24): OpenWrt added as a first adapter, before acceptance.
 - v1.2 (2026-10-24): No NAT between monitored hosts and the Core, before
   acceptance.
+- v1.3 (2026-10-24): the observed MAC of the peer is a second target, and
+  quarantine follows a contained machine to a new address or key
+  (ADR-0028), before acceptance.

@@ -11,6 +11,7 @@ pub mod chain;
 pub mod event;
 pub mod head;
 pub mod keys;
+pub mod machine;
 pub mod merkle;
 pub mod pairing;
 pub mod seal;
