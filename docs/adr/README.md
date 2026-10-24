@@ -64,6 +64,7 @@ supersedes it; the old one only has its status updated.
 | [0028](0028-machine-identity-hwid-and-mac.md) | Host selection beyond the IP address: machine id (HWID) and MAC | Proposed |
 | [0029](0029-daemon-pinning-and-host-enrolment.md) | Daemon pinning and host enrolment approved by the owner | Proposed |
 | [0030](0030-core-keys-in-two-moments.md) | Core keys in two moments: transport at boot, head keys at activation | Proposed |
+| [0031](0031-witness-app-design-and-ui-contract.md) | The owner app's design, information structure and UI contract | Proposed |
 
 ## Open questions
 

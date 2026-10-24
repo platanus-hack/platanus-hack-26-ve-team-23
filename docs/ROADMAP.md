@@ -18,13 +18,13 @@ What is missing and why: `PENDIENTES.md`.
 | M7b | Merkle and off-site archive | 0025, 0026 | Built: Merkle root in head v2, inclusion proofs, S3 uploader, OpenTofu module, LocalStack and Render blueprint (infrastructure untested here) |
 | M7c | Configuration chain and optional remote configuration | 0027 | Built: chained configurations without rollback, enterprise signer, S3 polling with alerts, signing CLI |
 | M7 | Signed heads and record | 0006, 0007, 0019 | Done: sealed to the epoch key, chained, persisted, hybrid heads verified by the app |
-| M8 | Owner app (phone) | 0013, 0024 | Done: activation wizard, dashboard, hosts with Identify and Release, opening the sealed record, answering `ask` with alerts; Android specifics pending |
+| M8 | Owner app (phone) | 0013, 0024, 0031 | Done: activation wizard, five screens (overview, machines, events, record, settings), Identify, Approve and Release, opening the sealed record, answering `ask` with alerts, Spanish and English, light and dark; reviewed in a browser against a mock shaped like the Rust structs; not yet run on a device; Android specifics pending |
 | M9 | Pairing | 0017 | Done with a P-256 owner key bound to the Core, nonce and app identity; passkeys pending |
 | M9b | Host identity and identify | 0015, 0021 | Done: fingerprint per host, identify notice, owner enrolment, heartbeat and dead man's switch; TPM key and boot quote pending (hardware) |
 | M10 | Classifier | 0005 | Pending |
 | M11 | Results and demo | 0010 | Pending: needs M2, a real `eval` run against the Core, the demo router and the Pi |
 | M12 | Repository clean-up | – | In progress: documentation synced with the code |
-| M13 | Landing page and app redesign | 0013 | Designs ready; implementation after M12 |
+| M13 | Landing page and app redesign | 0013, 0031 | Done in the browser preview: new `witness/ui`, HAWK icons, landing in `misc/landing`; pending the Tauri build on device, publishing the landing and a release for `install.sh` |
 
 Critical path for the demo: M2, then M11 (router, Pi, `eval` metrics,
 recorded-session fallback). M10, passkeys, the TPM key, the S3 archive and

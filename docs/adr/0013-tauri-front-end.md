@@ -115,3 +115,4 @@ displays and forwards user input.
 ## History
 
 - v1.0 (2026-10-24): Initial decision.
+- v1.1 (2026-10-24): look and screens refined by ADR-0031 (grey and black identity, light and dark, five sections); the technology is unchanged.

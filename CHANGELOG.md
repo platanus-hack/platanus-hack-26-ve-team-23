@@ -15,9 +15,27 @@ Every entry is written when the change is merged, under `Unreleased`.
   the roadmap adds M12 (repository clean-up), M13 (landing page and app
   redesign, designs ready) and the critical path for the demo;
   `PENDIENTES.md` lists that path and the redesign after the clean-up.
+- ADR-0011 v1.2: OFL-1.1 allowed for font files only, as the team decided.
+- `witness/icons`: the HAWK mark replaces the icons copied from Nepheral.
 
 ### Added
 
+- ADR-0031: the owner app's design, information structure and UI contract
+  (grey and black identity, light and dark, five screens, one state per Core
+  situation, status never by colour alone).
+- `misc/landing`: the internal landing page (3D Raspberry Pi with three.js,
+  part explorer, the real app in a phone frame, design tokens in
+  `DESIGN.md`) and the host daemon installer `install.sh` (SHA-256 checked
+  download, systemd service under its own user, OpenCode plugin).
+- `witness/ui`: the app screens rebuilt on the twelve commands of
+  `commands.rs` (overview, machines, events, record, settings, activation),
+  Spanish and English, an SVG chart with a table alternative, sheets for
+  approving, releasing and event detail, and the stale, unreachable,
+  identity-changed, heads-invalid, paired-elsewhere and dormant states.
+- `witness/ui/preview.js` scenarios with data shaped exactly like the Rust
+  structs, and `witness/tools/audit-i18n.js`, which fails on a missing or
+  mismatched text key.
+- Saira and JetBrains Mono (SIL OFL 1.1) as files in `witness/ui/fonts`.
 - ADR-0025 and ADR-0026: a Merkle tree per batch with its root inside
   every signed head (head v2, inclusion proofs bound to the head), and an
   off-site archive of sealed batches and heads in S3 with Object Lock.
@@ -137,3 +155,9 @@ Every entry is written when the change is merged, under `Unreleased`.
 - `host-daemon` and `edge-net` crates; Guardian and daemon on hyper.
 - Docker: development container, Guardian image limited to 2 GB, smoke
   test, optional Ollama service on the GPU.
+
+### Changed
+
+- `witness/icons` are the HAWK mark on a dark rounded square (they were
+  copied from Nepheral).
+- `witness/README.md` describes the QUIC link (it still described HTTP).

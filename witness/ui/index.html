@@ -1,227 +1,385 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="es" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>HAWK witness</title>
+  <meta name="color-scheme" content="light dark">
+  <title>HAWK</title>
+  <link rel="icon" href="hawk-mark.svg" type="image/svg+xml">
+  <link rel="preload" href="fonts/saira-latin-wdth-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="booting">
-  <div class="app">
-    <aside class="nav" aria-label="Sections">
-      <div class="logo" aria-label="HAWK">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13l6-2 3-7 3 7 6 2-6 2-3 6-3-6z"/></svg>
-        <span>HAWK</span>
-      </div>
-      <a href="#overview" class="active">Overview</a>
-      <a href="#hosts">Hosts</a>
-      <a href="#events">Events</a>
-      <a href="#integrity">Integrity</a>
-      <a href="#record">Record</a>
-      <div class="nav-foot">
-        <button id="theme" class="ghost" type="button" aria-label="Toggle theme">Light theme</button>
-        <span class="muted" id="version"></span>
-      </div>
-    </aside>
 
-    <div class="main">
-      <header class="topbar">
-        <div class="core-state" id="state" role="status">
-          <span class="status-icon" aria-hidden="true">•</span><span class="status-text">Connecting</span>
-        </div>
-        <div class="core-id">
-          <span class="core-name" id="core-name"></span>
-          <code class="fp" id="core-fp" title="Core fingerprint"></code>
-          <span class="muted transport">QUIC · mutual TLS</span>
-          <button id="change-core" class="ghost small" type="button">Change Core</button>
-        </div>
-      </header>
+<!-- Icons: one sprite, drawn with the page's ink. Nothing external. -->
+<svg class="sprite" width="0" height="0" aria-hidden="true" focusable="false">
+  <symbol id="i-mark" viewBox="0 0 60 36"><path d="M0 0 L24 5 L30 22 L36 5 L60 0 L30 36 Z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-overview" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="8" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="5" rx="1.8"/><rect x="13.5" y="11.5" width="7" height="9" rx="1.8"/><rect x="3.5" y="14.5" width="7" height="6" rx="1.8"/></symbol>
+  <symbol id="i-hosts" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2.2"/><path d="M8 20h8M12 16v4"/></symbol>
+  <symbol id="i-events" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></symbol>
+  <symbol id="i-record" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2.2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h9M19 7h1M4 17h1M11 17h9"/><circle cx="16" cy="7" r="2.2"/><circle cx="8" cy="17" r="2.2"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-ask" viewBox="0 0 24 24"><path d="M9.2 9.2a2.9 2.9 0 1 1 4.1 2.6c-.8.4-1.3 1-1.3 1.9"/><circle cx="12" cy="17.2" r=".7" fill="currentColor"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><circle cx="12" cy="17" r=".7" fill="currentColor"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5.2c0 4.4-3 7.9-7 9.8-4-1.9-7-5.4-7-9.8V6z"/></symbol>
+  <symbol id="i-approve" viewBox="0 0 24 24"><path d="M12 3l7 3v5.2c0 4.4-3 7.9-7 9.8-4-1.9-7-5.4-7-9.8V6z"/><path d="M8.6 12l2.4 2.4 4.4-4.8"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/></symbol>
+  <symbol id="i-release" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2.2"/><path d="M8 11V8a4 4 0 0 1 7.4-2.1"/></symbol>
+  <symbol id="i-quarantine" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.2"/><path d="M6.2 6.2l11.6 11.6"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.2"/><path d="M20 20l-4.3-4.3"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v5h-5"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-offline" viewBox="0 0 24 24"><path d="M9.5 14.5l-2.2 2.2a3.2 3.2 0 0 1-4.5-4.5l3-3M14.5 9.5l2.2-2.2a3.2 3.2 0 0 1 4.5 4.5l-3 3M4 4l16 16"/></symbol>
+  <symbol id="i-net" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="5" rx="1.2"/><rect x="3" y="16" width="6" height="5" rx="1.2"/><rect x="15" y="16" width="6" height="5" rx="1.2"/><path d="M12 8v4M6 16v-4h12v4"/></symbol>
+  <symbol id="i-chain" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+</svg>
 
-      <div class="filters" role="toolbar" aria-label="Time range">
-        <span class="muted">Range</span>
-        <div class="segmented" id="range">
-          <button type="button" data-min="15">15m</button>
-          <button type="button" data-min="60" class="on">1h</button>
-          <button type="button" data-min="360">6h</button>
-          <button type="button" data-min="1440">24h</button>
-        </div>
-        <span class="muted updated" id="updated"></span>
-      </div>
+<a class="skip" href="#main" data-i18n="a11y.skip"></a>
 
-      <section id="banner" class="banner" role="alert" hidden></section>
-
-      <section id="overview" class="kpis" aria-label="Summary">
-        <div class="card kpi hero">
-          <span class="kpi-label">Blocked actions</span>
-          <span class="kpi-value" id="k-blocked">0</span>
-          <span class="kpi-sub" id="k-blocked-sub">in range</span>
-        </div>
-        <div class="card kpi"><span class="kpi-label">Decisions</span><span class="kpi-value" id="k-total">0</span><span class="kpi-sub" id="k-rate"></span></div>
-        <div class="card kpi"><span class="kpi-label">Asked the owner</span><span class="kpi-value" id="k-ask">0</span><span class="kpi-sub">waiting or answered</span></div>
-        <div class="card kpi"><span class="kpi-label">Hosts contained</span><span class="kpi-value" id="k-contained">0</span><span class="kpi-sub" id="k-contained-sub">at the firewall</span></div>
-        <div class="card kpi"><span class="kpi-label">Record integrity</span><span class="kpi-value" id="k-integrity">–</span><span class="kpi-sub" id="k-integrity-sub"></span></div>
-      </section>
-
-      <section class="card" id="asks" hidden>
-        <div class="card-head">
-          <h2>Waiting for your answer</h2>
-          <span class="muted">The agent is paused until you allow or deny</span>
-        </div>
-        <ul class="asks" id="ask-list"></ul>
-      </section>
-
-      <section class="grid">
-        <div class="card span-2">
-          <div class="card-head">
-            <h2>Decisions over time</h2>
-            <div class="legend" aria-label="Legend">
-              <span><i class="key allow"></i>Allowed</span>
-              <span><i class="key ask"></i>Asked</span>
-              <span><i class="key deny"></i>Denied</span>
-            </div>
-            <button class="ghost small" id="chart-table-toggle" type="button">Table</button>
-          </div>
-          <div class="chart" id="chart-wrap">
-            <svg id="chart" role="img" aria-label="Decisions per interval, stacked by outcome"></svg>
-            <div class="tooltip" id="tooltip" hidden></div>
-          </div>
-          <table class="data chart-table" id="chart-table" hidden>
-            <thead><tr><th>From</th><th class="num">Allowed</th><th class="num">Asked</th><th class="num">Denied</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-
-        <div class="card">
-          <div class="card-head"><h2>Top rules</h2></div>
-          <ul class="rank" id="rules"></ul>
-        </div>
-
-        <div class="card" id="hosts">
-          <div class="card-head"><h2>Hosts</h2><span class="muted" id="host-count"></span></div>
-          <input id="host-filter" class="host-filter" placeholder="Name, IP, MAC, HWID or fingerprint" spellcheck="false" autocomplete="off" aria-label="Filter hosts">
-          <ul class="hosts" id="host-list"></ul>
-        </div>
-      </section>
-
-      <section class="card" id="events">
-        <div class="card-head">
-          <h2>Events</h2>
-          <div class="event-filters">
-            <select id="f-outcome" aria-label="Outcome">
-              <option value="">All outcomes</option>
-              <option value="allow">Allowed</option>
-              <option value="ask">Asked</option>
-              <option value="deny">Denied</option>
-              <option value="containment">Containment</option>
-            </select>
-            <select id="f-severity" aria-label="Severity">
-              <option value="">All severities</option>
-              <option>critical</option><option>high</option><option>medium</option><option>low</option>
-            </select>
-            <input id="f-text" placeholder="Search host, session, tool, rule" spellcheck="false" aria-label="Search">
-          </div>
-        </div>
-        <div class="table-wrap">
-          <table class="data">
-            <thead><tr><th>Time</th><th class="num">#</th><th>Outcome</th><th>Severity</th><th>Host</th><th>Tool</th><th>Rule</th></tr></thead>
-            <tbody id="event-rows"></tbody>
-          </table>
-        </div>
-        <p class="muted empty" id="events-empty" hidden>No events in this range.</p>
-      </section>
-
-      <section class="card" id="integrity">
-        <div class="card-head">
-          <h2>Signed heads</h2>
-          <span class="muted">Ed25519 + ML-DSA-65, checked against the identity pinned at pairing</span>
-        </div>
-        <div class="identity" id="identity"></div>
-        <ol class="heads" id="heads"></ol>
-      </section>
-
-      <section class="card" id="record">
-        <div class="card-head">
-          <h2>Record</h2>
-          <span class="muted">Decrypted with the epoch key on this device; the Core cannot read it</span>
-        </div>
-        <div class="record-bar">
-          <button id="open-record" type="button">Open the record</button>
-          <span class="muted" id="record-status"></span>
-        </div>
-        <ol class="record" id="record-list"></ol>
-      </section>
+<div class="app" id="app">
+  <!-- Desktop rail; on a phone the same entries become the tab bar below -->
+  <aside class="rail" aria-label="HAWK">
+    <div class="brand"><svg class="mark" viewBox="0 0 60 36" aria-hidden="true"><use href="#i-mark"/></svg><span>HAWK</span></div>
+    <nav id="rail-nav" class="rail-nav" data-i18n-label="nav.label"></nav>
+    <div class="rail-foot">
+      <span class="live" id="rail-live"><i aria-hidden="true"></i><span id="rail-live-text"></span></span>
+      <span class="muted" id="version"></span>
     </div>
-  </div>
-  <div class="wizard" id="wizard" hidden>
-    <div class="wizard-card" role="dialog" aria-modal="true" aria-labelledby="wizard-title">
-      <div class="wizard-head">
-        <div class="logo small-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13l6-2 3-7 3 7 6 2-6 2-3 6-3-6z"/></svg><span>HAWK</span></div>
-        <ol class="steps" id="steps">
-          <li data-step="find">Find</li><li data-step="verify">Verify</li><li data-step="pair">Pair</li><li data-step="configure">Configure</li>
-        </ol>
-      </div>
+  </aside>
 
-      <section class="step" data-step="find">
-        <h2 id="wizard-title">Activate a Core</h2>
-        <p class="muted">Cores on this network announce themselves. Pick the one to activate. A new Core denies every action until it is paired with this app.</p>
-        <div class="scan-row">
-          <span class="spinner" id="scan-spinner" aria-hidden="true"></span>
-          <span id="scan-status" class="muted">Searching the network…</span>
-          <button id="scan" class="ghost small" type="button">Search again</button>
-        </div>
-        <ul class="found" id="found"></ul>
-        <form class="manual" id="manual-form">
-          <label for="manual-addr">Not listed? Type its address</label>
-          <div class="manual-row">
-            <input id="manual-addr" placeholder="192.168.88.20" spellcheck="false" autocomplete="off" autocapitalize="off" inputmode="url">
-            <button class="ghost" type="submit" id="manual-go">Connect</button>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand brand-compact"><svg class="mark" viewBox="0 0 60 36" aria-hidden="true"><use href="#i-mark"/></svg></div>
+      <h1 id="screen-title"></h1>
+      <span class="pill-state" id="top-state" data-kind="good"><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><span id="top-state-text"></span></span>
+    </header>
+
+    <div id="banner" class="banner" role="alert" hidden>
+      <svg class="ic" aria-hidden="true"><use href="#i-alert"/></svg>
+      <p id="banner-text"></p>
+      <button id="banner-retry" class="pill small ghost" type="button" hidden data-i18n="banner.retry"></button>
+    </div>
+
+    <main id="main" class="main" tabindex="-1">
+
+      <!-- Resumen -->
+      <section class="view" id="view-overview" data-view="overview" aria-labelledby="screen-title">
+        <section id="asks" class="card asks" hidden aria-labelledby="h-asks">
+          <div class="card-head">
+            <h2 id="h-asks" data-i18n="asks.title"></h2>
+            <span class="count" id="asks-count"></span>
           </div>
-          <p class="muted small">For networks where Cores cannot announce themselves (another VLAN, an emulator). You still check the fingerprint next.</p>
-        </form>
+          <p class="note" data-i18n="asks.note"></p>
+          <ul id="ask-list" class="stack"></ul>
+        </section>
+
+        <section id="hero" class="hero" data-kind="good" aria-label="HAWK">
+          <div class="hero-main">
+            <span class="hero-icon" aria-hidden="true"><svg class="ic" id="hero-icon"><use href="#i-shield"/></svg></span>
+            <div class="hero-text" aria-live="polite">
+              <h2 id="state-title"></h2>
+              <p id="state-sub"></p>
+            </div>
+          </div>
+          <dl class="hero-meta">
+            <div><dt data-i18n="core.name"></dt><dd id="core-name"></dd></div>
+            <div><dt data-i18n="core.fingerprint"></dt><dd><code id="core-fp"></code></dd></div>
+            <div><dt data-i18n="core.link"></dt><dd data-i18n="core.linkValue"></dd></div>
+            <div><dt data-i18n="core.updated"></dt><dd id="updated"></dd></div>
+          </dl>
+        </section>
+
+        <section class="kpis" aria-label="Resumen" data-i18n-label="kpi.label">
+          <div class="kpi lead"><span class="kpi-label" data-i18n="kpi.blocked"></span><span class="kpi-value" id="k-blocked">0</span><span class="kpi-sub" id="k-blocked-sub"></span></div>
+          <div class="kpi"><span class="kpi-label" data-i18n="kpi.total"></span><span class="kpi-value" id="k-total">0</span><span class="kpi-sub" id="k-rate"></span></div>
+          <div class="kpi"><span class="kpi-label" data-i18n="kpi.asked"></span><span class="kpi-value" id="k-ask">0</span><span class="kpi-sub" data-i18n="kpi.askedSub"></span></div>
+          <div class="kpi"><span class="kpi-label" data-i18n="kpi.contained"></span><span class="kpi-value" id="k-contained">0</span><span class="kpi-sub" id="k-contained-sub"></span></div>
+          <div class="kpi"><span class="kpi-label" data-i18n="kpi.integrity"></span><span class="kpi-value kpi-word" id="k-integrity">–</span><span class="kpi-sub" id="k-integrity-sub"></span></div>
+        </section>
+
+        <section class="card chart-card" id="chart-card" aria-labelledby="h-chart">
+          <div class="card-head">
+            <h2 id="h-chart" data-i18n="chart.title"></h2>
+            <div class="card-tools">
+              <div class="seg" id="range" role="group" data-i18n-label="range.label">
+                <button type="button" data-min="15" aria-pressed="false">15 min</button>
+                <button type="button" data-min="60" aria-pressed="true">1 h</button>
+                <button type="button" data-min="360" aria-pressed="false">6 h</button>
+                <button type="button" data-min="1440" aria-pressed="false">24 h</button>
+              </div>
+              <button id="chart-toggle" class="pill small ghost" type="button" aria-pressed="false" data-i18n="chart.asTable"></button>
+            </div>
+          </div>
+          <div class="chart-wrap" id="chart-wrap">
+            <svg id="chart" role="img" aria-labelledby="h-chart chart-desc" preserveAspectRatio="none"></svg>
+            <div id="tooltip" class="tooltip" hidden></div>
+          </div>
+          <p class="sr" id="chart-desc"></p>
+          <ul class="legend" id="legend" aria-label="Leyenda" data-i18n-label="chart.legend">
+            <li><i class="sw allow" aria-hidden="true"></i><span data-i18n="verdict.allow"></span></li>
+            <li><i class="sw ask" aria-hidden="true"></i><span data-i18n="verdict.ask"></span></li>
+            <li><i class="sw deny" aria-hidden="true"></i><span data-i18n="verdict.deny"></span></li>
+          </ul>
+          <div class="table-wrap" id="chart-table-wrap" hidden>
+            <table id="chart-table">
+              <thead><tr><th scope="col" data-i18n="chart.from"></th><th scope="col" class="num" data-i18n="verdict.allow"></th><th scope="col" class="num" data-i18n="verdict.ask"></th><th scope="col" class="num" data-i18n="verdict.deny"></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <div class="two">
+          <section class="card" aria-labelledby="h-rules">
+            <div class="card-head"><h2 id="h-rules" data-i18n="rules.title"></h2></div>
+            <ol id="rules" class="bars"></ol>
+          </section>
+          <section class="card" aria-labelledby="h-recent">
+            <div class="card-head"><h2 id="h-recent" data-i18n="recent.title"></h2><button class="link" type="button" data-go="events" data-i18n="recent.all"></button></div>
+            <ul id="recent" class="stack"></ul>
+          </section>
+        </div>
       </section>
 
-      <section class="step" data-step="verify" hidden>
-        <h2>Verify it is your Core</h2>
-        <p class="muted">The Core prints its fingerprint when it starts (<code>core identity fingerprint=…</code>). It must be exactly this one:</p>
-        <div class="big-fp" id="verify-fp"></div>
-        <p class="muted small">The connection is already encrypted and bound to this key; checking it by eye confirms the key belongs to the device in front of you.</p>
-        <div class="actions"><button class="ghost" type="button" data-back="find">Back</button><button id="verify-ok" type="button">It matches</button></div>
+      <!-- Equipos -->
+      <section class="view" id="view-hosts" data-view="hosts" hidden aria-labelledby="screen-title">
+        <div class="toolbar">
+          <label class="search"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg><span class="sr" data-i18n="hosts.searchLabel"></span><input id="host-filter" type="search" autocomplete="off" spellcheck="false" data-i18n-ph="hosts.search"></label>
+          <p class="toolbar-note" id="host-count"></p>
+        </div>
+        <ul id="host-list" class="hosts"></ul>
+        <p id="hosts-empty" class="empty" hidden></p>
       </section>
 
-      <section class="step" data-step="pair" hidden>
-        <h2>Pair</h2>
-        <p class="muted" id="pair-intro">Creating this app's keys and signing the pairing for this Core and this device only…</p>
-        <div class="big-code" id="pair-code"></div>
-        <p class="muted small" id="pair-hint" hidden>The Core's log shows <code>paired; confirm this code</code> with the same six digits.</p>
-        <div class="actions"><button id="pair-ok" type="button" hidden>The codes match</button></div>
-      </section>
-
-      <section class="step" data-step="configure" hidden>
-        <h2>Configure</h2>
-        <p class="muted">Name the Core and choose where it contains a misbehaving host. The configuration is signed with your owner key.</p>
-        <form id="config-form" class="config">
-          <label>Name<input id="cfg-name" value="HAWK Core" maxlength="48" required></label>
-          <label>Firewall
-            <select id="cfg-fw">
-              <option value="dry_run">Dry run (record only, no router)</option>
-              <option value="mikrotik">MikroTik RouterOS 7</option>
-              <option value="openwrt">OpenWrt</option>
+      <!-- Eventos -->
+      <section class="view" id="view-events" data-view="events" hidden aria-labelledby="screen-title">
+        <div class="toolbar toolbar-filters">
+          <label class="field"><span data-i18n="events.outcome"></span>
+            <select id="f-outcome">
+              <option value="" data-i18n="events.all"></option>
+              <option value="allow" data-i18n="verdict.allow"></option>
+              <option value="ask" data-i18n="verdict.ask"></option>
+              <option value="deny" data-i18n="verdict.deny"></option>
+              <option value="containment" data-i18n="verdict.contain"></option>
+              <option value="alert" data-i18n="events.alerts"></option>
             </select>
           </label>
-          <div class="router" id="router-fields" hidden>
-            <label>Router address<input id="cfg-url" placeholder="https://192.168.88.1" spellcheck="false"></label>
-            <label>User<input id="cfg-user" autocomplete="off"></label>
-            <label>Password<input id="cfg-pass" type="password" autocomplete="off"></label>
-            <label>Certificate SHA-256<input id="cfg-cert" placeholder="required for https" spellcheck="false"></label>
-          </div>
-          <div class="actions"><button class="ghost" type="button" id="config-skip">Later</button><button type="submit">Save and open</button></div>
-        </form>
+          <label class="field"><span data-i18n="events.severity"></span>
+            <select id="f-severity">
+              <option value="" data-i18n="events.any"></option>
+              <option value="critical" data-i18n="sev.critical"></option>
+              <option value="high" data-i18n="sev.high"></option>
+              <option value="medium" data-i18n="sev.medium"></option>
+              <option value="low" data-i18n="sev.low"></option>
+            </select>
+          </label>
+          <label class="search"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg><span class="sr" data-i18n="events.searchLabel"></span><input id="f-text" type="search" autocomplete="off" spellcheck="false" data-i18n-ph="events.search"></label>
+        </div>
+        <p class="toolbar-note" id="events-count"></p>
+        <ul id="event-list" class="events"></ul>
+        <p id="events-empty" class="empty" hidden data-i18n="events.empty"></p>
+        <button id="events-more" class="pill ghost" type="button" hidden></button>
       </section>
 
-      <p class="wizard-error" id="wizard-error" role="alert" hidden></p>
-      <p class="muted device">This device: <code id="device-fp"></code></p>
-    </div>
+      <!-- Registro -->
+      <section class="view" id="view-record" data-view="record" hidden aria-labelledby="screen-title">
+        <section class="card" aria-labelledby="h-integrity">
+          <div class="card-head"><h2 id="h-integrity" data-i18n="integrity.title"></h2><span id="identity-chip"></span></div>
+          <p class="lead-line" id="integrity-sum"></p>
+          <p class="note" data-i18n="integrity.how"></p>
+          <ol id="heads" class="heads"></ol>
+          <button id="heads-more" class="pill small ghost" type="button" hidden></button>
+        </section>
+
+        <section class="card" aria-labelledby="h-record">
+          <div class="card-head"><h2 id="h-record" data-i18n="record.title"></h2></div>
+          <p class="note" data-i18n="record.note"></p>
+          <div class="row">
+            <button id="open-record" class="pill primary" type="button" data-i18n="record.open"></button>
+            <span id="record-status" class="status-line" role="status"></span>
+          </div>
+          <div id="record-tools" class="toolbar" hidden>
+            <label class="field"><span data-i18n="record.kind"></span><select id="r-kind"></select></label>
+            <p class="toolbar-note" id="record-count"></p>
+          </div>
+          <ol id="record-list" class="record"></ol>
+        </section>
+      </section>
+
+      <!-- Ajustes -->
+      <section class="view" id="view-settings" data-view="settings" hidden aria-labelledby="screen-title">
+        <section class="card" aria-labelledby="h-set-core">
+          <div class="card-head"><h2 id="h-set-core" data-i18n="settings.core"></h2></div>
+          <dl class="kv">
+            <div><dt data-i18n="core.name"></dt><dd id="set-core-name"></dd></div>
+            <div><dt data-i18n="core.fingerprint"></dt><dd><code id="set-core-fp"></code></dd></div>
+            <div><dt data-i18n="settings.firewall"></dt><dd id="set-firewall"></dd></div>
+            <div><dt data-i18n="settings.events"></dt><dd id="set-events"></dd></div>
+          </dl>
+          <div class="row">
+            <button id="reconfigure" class="pill ghost" type="button" data-i18n="settings.reconfigure"></button>
+          </div>
+        </section>
+
+        <section class="card" aria-labelledby="h-set-dev">
+          <div class="card-head"><h2 id="h-set-dev" data-i18n="settings.device"></h2></div>
+          <dl class="kv">
+            <div><dt data-i18n="settings.deviceFp"></dt><dd><code id="device-fp"></code></dd></div>
+            <div><dt data-i18n="settings.keys"></dt><dd data-i18n="settings.keysValue"></dd></div>
+          </dl>
+          <p class="note" data-i18n="settings.deviceNote"></p>
+        </section>
+
+        <section class="card" aria-labelledby="h-set-look">
+          <div class="card-head"><h2 id="h-set-look" data-i18n="settings.look"></h2></div>
+          <div class="field-row">
+            <span class="field-label" id="lbl-theme" data-i18n="settings.theme"></span>
+            <div class="seg" id="theme-seg" role="group" aria-labelledby="lbl-theme">
+              <button type="button" data-theme-choice="auto" aria-pressed="false" data-i18n="settings.themeAuto"></button>
+              <button type="button" data-theme-choice="light" aria-pressed="false" data-i18n="settings.themeLight"></button>
+              <button type="button" data-theme-choice="dark" aria-pressed="false" data-i18n="settings.themeDark"></button>
+            </div>
+          </div>
+          <div class="field-row">
+            <span class="field-label" id="lbl-lang" data-i18n="settings.language"></span>
+            <div class="seg" id="lang-seg" role="group" aria-labelledby="lbl-lang">
+              <button type="button" data-lang-choice="es" aria-pressed="false">Español</button>
+              <button type="button" data-lang-choice="en" aria-pressed="false">English</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="card" aria-labelledby="h-set-net">
+          <div class="card-head"><h2 id="h-set-net" data-i18n="settings.network"></h2></div>
+          <ul class="facts">
+            <li><svg class="ic" aria-hidden="true"><use href="#i-net"/></svg><span data-i18n="settings.factQuic"></span></li>
+            <li><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><span data-i18n="settings.factPin"></span></li>
+            <li><svg class="ic" aria-hidden="true"><use href="#i-chain"/></svg><span data-i18n="settings.factChain"></span></li>
+            <li><svg class="ic" aria-hidden="true"><use href="#i-offline"/></svg><span data-i18n="settings.factOffline"></span></li>
+          </ul>
+        </section>
+
+        <section class="card danger" aria-labelledby="h-set-danger">
+          <div class="card-head"><h2 id="h-set-danger" data-i18n="settings.change"></h2></div>
+          <p class="note" data-i18n="settings.changeNote"></p>
+          <div class="row"><button id="change-core" class="pill outline" type="button" data-i18n="settings.changeBtn"></button></div>
+        </section>
+      </section>
+    </main>
+
+    <nav id="tabbar" class="tabbar" data-i18n-label="nav.label"></nav>
   </div>
-  <script src="app.js"></script>
+</div>
+
+<!-- Activation (ADR-0024): find, verify, pair, configure -->
+<div class="wizard" id="wizard" hidden role="dialog" aria-modal="true" aria-labelledby="wiz-title">
+  <div class="wizard-inner">
+    <header class="wiz-head">
+      <div class="brand"><svg class="mark" viewBox="0 0 60 36" aria-hidden="true"><use href="#i-mark"/></svg><span>HAWK</span></div>
+      <ol id="steps" class="steps">
+        <li data-step="find"><span class="n">1</span><span class="l" data-i18n="wiz.stepFind"></span></li>
+        <li data-step="verify"><span class="n">2</span><span class="l" data-i18n="wiz.stepVerify"></span></li>
+        <li data-step="pair"><span class="n">3</span><span class="l" data-i18n="wiz.stepPair"></span></li>
+        <li data-step="configure"><span class="n">4</span><span class="l" data-i18n="wiz.stepConfigure"></span></li>
+      </ol>
+    </header>
+
+    <p id="wizard-error" class="form-error" role="alert" hidden></p>
+
+    <section class="step" data-step="find">
+      <h2 id="wiz-title" data-i18n="wiz.findTitle"></h2>
+      <p class="lede" data-i18n="wiz.findText"></p>
+      <div class="scan-line"><span class="spinner" id="scan-spinner" aria-hidden="true"></span><span id="scan-status" role="status"></span></div>
+      <ul id="found" class="stack"></ul>
+      <div class="row">
+        <button id="scan" class="pill ghost" type="button" data-i18n="wiz.scanAgain"></button>
+      </div>
+      <details class="manual" id="manual">
+        <summary data-i18n="wiz.manual"></summary>
+        <p class="note" data-i18n="wiz.manualNote"></p>
+        <form id="manual-form" class="inline-form" autocomplete="off">
+          <label class="field grow"><span class="sr" data-i18n="wiz.manualLabel"></span><input id="manual-addr" type="text" inputmode="decimal" spellcheck="false" placeholder="192.168.88.20:7443" required></label>
+          <button id="manual-go" class="pill primary" type="submit" data-i18n="wiz.manualGo"></button>
+        </form>
+      </details>
+    </section>
+
+    <section class="step" data-step="verify" hidden>
+      <h2 data-i18n="wiz.verifyTitle"></h2>
+      <p class="lede" data-i18n="wiz.verifyText"></p>
+      <p class="bigcode"><code id="verify-fp"></code></p>
+      <p class="note" data-i18n="wiz.verifyHint"></p>
+      <div class="row">
+        <button id="verify-ok" class="pill primary" type="button" data-i18n="wiz.verifyOk"></button>
+        <button class="pill ghost" type="button" data-back="find" data-i18n="wiz.verifyNo"></button>
+      </div>
+    </section>
+
+    <section class="step" data-step="pair" hidden>
+      <h2 data-i18n="wiz.pairTitle"></h2>
+      <p class="lede" id="pair-intro"></p>
+      <p class="bigcode" id="pair-code-wrap" hidden><code id="pair-code"></code></p>
+      <p class="note" id="pair-hint" hidden data-i18n="wiz.pairHint"></p>
+      <div class="row">
+        <button id="pair-ok" class="pill primary" type="button" hidden data-i18n="wiz.pairOk"></button>
+        <button id="pair-no" class="pill ghost" type="button" hidden data-i18n="wiz.pairNo"></button>
+        <button id="pair-retry" class="pill ghost" type="button" hidden data-back="find" data-i18n="wiz.pairBack"></button>
+      </div>
+    </section>
+
+    <section class="step" data-step="configure" hidden>
+      <h2 data-i18n="wiz.configTitle"></h2>
+      <p class="lede" data-i18n="wiz.configText"></p>
+      <div id="wizard-config"></div>
+    </section>
+  </div>
+</div>
+
+<!-- One form for the wizard and for Ajustes -->
+<template id="tpl-config">
+  <form class="config-form" autocomplete="off" novalidate>
+    <label class="field"><span data-i18n="cfg.name"></span><input name="name" type="text" maxlength="48" required autocomplete="off" data-i18n-ph="cfg.namePh"></label>
+    <label class="field"><span data-i18n="cfg.firewall"></span>
+      <select name="fw">
+        <option value="dry_run" data-i18n="cfg.fwDry"></option>
+        <option value="mikrotik">MikroTik (RouterOS 7)</option>
+        <option value="openwrt">OpenWrt</option>
+      </select>
+    </label>
+    <p class="note" data-fw-note data-i18n="cfg.fwDryNote"></p>
+    <div class="router" hidden>
+      <label class="field"><span data-i18n="cfg.url"></span><input name="url" type="url" inputmode="url" spellcheck="false" placeholder="https://192.168.88.1" autocomplete="off"></label>
+      <label class="field"><span data-i18n="cfg.user"></span><input name="user" type="text" spellcheck="false" autocomplete="off"></label>
+      <label class="field"><span data-i18n="cfg.password"></span><input name="password" type="password" autocomplete="new-password"></label>
+      <label class="field"><span data-i18n="cfg.cert"></span><input name="cert" type="text" spellcheck="false" autocomplete="off" data-i18n-ph="cfg.certPh"></label>
+      <label class="field" data-only="mikrotik"><span data-i18n="cfg.list"></span><input name="list" type="text" spellcheck="false" autocomplete="off" data-i18n-ph="cfg.listPh"></label>
+      <p class="note" data-i18n="cfg.secretNote"></p>
+    </div>
+    <p class="form-error" role="alert" hidden></p>
+    <div class="row">
+      <button class="pill primary" type="submit" data-submit></button>
+      <button class="pill ghost" type="button" data-skip hidden></button>
+    </div>
+  </form>
+</template>
+
+<dialog id="sheet" class="sheet" aria-labelledby="sheet-title">
+  <div class="sheet-card">
+    <header class="sheet-head">
+      <h2 id="sheet-title"></h2>
+      <button id="sheet-close" class="icon-btn" type="button" data-i18n-label="a11y.close"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
+    </header>
+    <div id="sheet-body" class="sheet-body"></div>
+    <footer id="sheet-actions" class="sheet-actions"></footer>
+  </div>
+</dialog>
+
+<div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+
+<script src="i18n.js"></script>
+<script src="kit.js"></script>
+<script src="chart.js"></script>
+<script src="app.js"></script>
 </body>
 </html>

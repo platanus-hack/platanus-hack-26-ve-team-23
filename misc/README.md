@@ -1,0 +1,25 @@
+# misc
+
+Internal material that is not part of the product, the crates or the
+hackathon submission.
+
+| Folder | What it is |
+|---|---|
+| `landing/` | The HAWK landing page: 3D Raspberry Pi (three.js), part explorer, the real app in a phone frame, and the host daemon installer (`install.sh`). Design tokens and rules in `landing/DESIGN.md`. |
+
+## Landing
+
+    cd misc/landing && python3 -m http.server 8765
+
+Open http://localhost:8765. It needs a server: the 3D modules do not load
+from `file://`. `landing/app/` is a copy of `witness/ui` made by
+`./sync-app.sh`; run it after every change to the app so the phone shows the
+current UI. `logo-v.html` is a design scratch page and loads Saira from Google
+Fonts; the landing itself uses the local font files.
+
+Third-party files: three.js and its addons in `landing/vendor/` (MIT,
+`three-LICENSE.txt`), Saira and JetBrains Mono in `landing/fonts/` (OFL-1.1,
+allowed for font files by ADR-0011).
+
+Open items (publishing the page, the release the installer downloads, signing
+`SHA256SUMS`): `PENDIENTES.md`, section "Landing y app".

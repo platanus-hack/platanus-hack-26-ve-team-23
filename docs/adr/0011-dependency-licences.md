@@ -37,6 +37,7 @@ projects without a licence review:
 | Unlicense, CC0-1.0 | Public-domain dedications |
 | Unicode-3.0, CDLA-Permissive-2.0 | Unicode tables and certificate data |
 | MPL-2.0 | Only for crates used unmodified |
+| OFL-1.1 | Only for font files, shipped with their licence text and never sold on their own |
 
 Not allowed: GPL, LGPL, AGPL; source-available licences on a dependency;
 non-commercial or no-derivatives licences; custom model licences (for
@@ -86,3 +87,7 @@ listed with their licence but do not constrain the product.
 - v1.0 (2026-10-24): Initial decision.
 - v1.1 (2026-10-24): Aligned with Nepheral ADR-0018 and enforced with
   `cargo deny`, before acceptance.
+- v1.2 (2026-10-24): OFL-1.1 allowed for font files only (Saira and
+  JetBrains Mono in the owner app, ADR-0031), as decided by the team. Fonts
+  are not crates, so `cargo deny` does not see them; the ADR that ships a
+  font lists it.
