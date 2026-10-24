@@ -59,8 +59,10 @@ jobs:
           targets: x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu
       # zig is the cross linker; glibc 2.28 runs on Debian 10+, Ubuntu 20.04+
       # and Raspberry Pi OS bullseye or later.
+      # 0.19 passes rustc's --fix-cortex-a53-843419 to zig, which rejects it
+      # on aarch64; later releases filter it.
       - name: cargo-zigbuild
-        run: pip install --user "cargo-zigbuild==0.19.*"
+        run: pip install --user --upgrade cargo-zigbuild
       - name: Build
         run: |
           cargo zigbuild --release --locked -p host-daemon -p guardian \
@@ -220,12 +222,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android
+      # The Gradle project calls back into the CLI that generated it; through
+      # npx it would call `npm`, which needs a package.json, so use cargo's.
+      - name: Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
       - name: Build the APK
         working-directory: witness
         run: |
           export NDK_HOME="$ANDROID_NDK_LATEST_HOME"
-          npx --yes @tauri-apps/cli@2 android init --ci
-          npx --yes @tauri-apps/cli@2 android build --apk --debug
+          cargo tauri android init --ci
+          cargo tauri android build --apk --debug
       - name: Collect
         run: |
           mkdir -p dist

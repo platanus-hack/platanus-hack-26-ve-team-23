@@ -105,7 +105,8 @@ Build tools only; nothing is linked into the product.
 | actions/checkout, actions/cache, actions/upload-artifact, actions/download-artifact, actions/setup-java | v4 | MIT |
 | dtolnay/rust-toolchain | master | MIT OR Apache-2.0 |
 | EmbarkStudios/cargo-deny-action | v2 | MIT OR Apache-2.0 |
-| cargo-zigbuild (PyPI, brings ziglang) | 0.19 | MIT |
+| cargo-zigbuild (PyPI, brings ziglang) | latest (0.19 rejected an aarch64 linker flag) | MIT |
+| tauri-cli (cargo install, Android job) | 2 | MIT OR Apache-2.0 |
 | ziglang | as required by cargo-zigbuild | MIT |
 | @tauri-apps/cli (npx) | 2 | MIT OR Apache-2.0 |
 | minisign (optional, Ubuntu package) | distro | ISC |
@@ -169,3 +170,5 @@ Build tools only; nothing is linked into the product.
 - v1.0 (2026-10-24): Initial proposal.
 - v1.1 (2026-10-24): macOS added (daemon for both architectures, universal
   `.dmg`, tests in CI), at the team's request.
+- v1.2 (2026-10-24): cargo-zigbuild unpinned (0.19 failed to link aarch64
+  with current rustc); the Android job uses `cargo tauri` instead of npx.
