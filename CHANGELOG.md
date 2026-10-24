@@ -14,6 +14,12 @@ Every entry is written when the change is merged, under `Unreleased`.
   release, built by hand from `887ae46`, stays as published.
 - The landing, the installer and the release notes use
   `https://hawkeeper.xyz`.
+- Landing checked against the code: the Core runs on any separate 64-bit
+  Linux machine, not only a Pi (the release ships x86_64 and aarch64);
+  containment needs an OpenWrt or MikroTik router; discovery can fall back
+  to typing the address; the claim about testing with 7-8B models is gone
+  (M2 is pending); a new answer lists what the rules detect today and that
+  unrecognised actions are allowed and recorded.
 
 - Documentation synced with the code: `CLAUDE.md` describes `llm-proxy` and
   `eval` as built, counts ADRs 0001 to 0030 and names the `origin` remote;

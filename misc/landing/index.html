@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HAWK</title>
-<meta name="description" content="Tu agente ejecuta. Tu HAWK revisa. Una Raspberry Pi aparte revisa cada acción de tu agente de IA antes de que ocurra.">
+<meta name="description" content="Tu agente ejecuta. Tu HAWK revisa. Un equipo aparte, como una Raspberry Pi, revisa cada acción de tu agente de IA antes de que ocurra.">
 <meta property="og:title" content="HAWK">
-<meta property="og:description" content="Tu agente ejecuta. Tu HAWK revisa. Una Raspberry Pi aparte revisa cada acción de tu agente de IA antes de que ocurra.">
+<meta property="og:description" content="Tu agente ejecuta. Tu HAWK revisa. Un equipo aparte, como una Raspberry Pi, revisa cada acción de tu agente de IA antes de que ocurra.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#E4E5E1">
 <link rel="icon" href="hawk-mark.svg" type="image/svg+xml">
@@ -394,7 +394,7 @@ footer { padding: var(--gap-section) 0 40px; }
       <h1 class="d1">Tu agente ejecuta.<br>Tu HAWK revisa.</h1>
 
       <div class="hero-copy">
-        <p class="lede">HAWK revisa cada acción de tus agentes de IA desde una Raspberry Pi separada, antes de que se ejecute. Ante una acción crítica, la niega y aísla la máquina en el firewall.</p>
+        <p class="lede">HAWK revisa cada acción de tus agentes de IA desde un equipo separado, una Raspberry Pi o cualquier computadora con Linux, antes de que se ejecute. Ante una acción crítica, la niega y, con un router OpenWrt o MikroTik, aísla la máquina.</p>
         <div class="actions">
           <a class="btn primary" href="#instalar">Cómo instalarlo</a>
           <a class="btn plain" href="downloads/">Descargas</a>
@@ -472,10 +472,10 @@ footer { padding: var(--gap-section) 0 40px; }
         <p class="lede" data-r>Los filtros de los modelos revisan lo que el modelo dice. HAWK controla lo que el agente hace con sus herramientas.</p>
       </div>
       <ul class="claims">
-        <li class="grid" data-r><h3 class="s3">Fuera del alcance del agente.</h3><p>Un agente tiene los mismos permisos que tú, y un monitor en la misma computadora se puede apagar. HAWK corre en otra placa.</p></li>
+        <li class="grid" data-r><h3 class="s3">Fuera del alcance del agente.</h3><p>Un agente tiene los mismos permisos que tú, y un monitor en la misma computadora se puede apagar. HAWK corre en otro equipo.</p></li>
         <li class="grid" data-r><h3 class="s3">Niega y aísla.</h3><p>Cada herramienta se consulta antes de ejecutarse. Ante una acción crítica, HAWK la niega y le pide al router, OpenWrt o MikroTik, que saque la máquina de la red.</p></li>
         <li class="grid" data-r><h3 class="s3">Un registro que el agente no puede reescribir.</h3><p>Cada decisión queda encadenada y firmada con Ed25519 y ML-DSA-65. La app verifica las firmas contra la identidad guardada al emparejar.</p></li>
-        <li class="grid" data-r><h3 class="s3">Funciona sin internet.</h3><p>La placa, las computadoras y el teléfono se comunican por QUIC cifrado dentro de tu red. La nube es opcional.</p></li>
+        <li class="grid" data-r><h3 class="s3">Funciona sin internet.</h3><p>HAWK, las computadoras y el teléfono se comunican por QUIC cifrado dentro de tu red. La nube es opcional.</p></li>
       </ul>
     </div>
   </section>
@@ -484,7 +484,7 @@ footer { padding: var(--gap-section) 0 40px; }
     <div class="frame">
       <div class="grid section-head">
         <h2 class="d2" data-r>Cabe en una mano.</h2>
-        <p class="lede" data-r>No hay servidor ni nube. HAWK corre en una Raspberry Pi conectada a tu red y usa el router que ya tienes.</p>
+        <p class="lede" data-r>La forma más pequeña de correr HAWK es una Raspberry Pi 4 conectada a tu red. También corre en cualquier computadora con Linux de 64 bits, siempre que no sea una de las que vigila.</p>
       </div>
       <div class="explorer" id="explorer" data-r>
         <div class="stage">
@@ -530,7 +530,7 @@ footer { padding: var(--gap-section) 0 40px; }
     <div class="frame">
       <div class="grid section-head">
         <h2 class="d2" data-r>Cómo se conecta.</h2>
-        <p class="lede" data-r>Tres equipos y tu router. Se encuentran solos en la red: nadie escribe direcciones.</p>
+        <p class="lede" data-r>Tres equipos y tu router. Se encuentran solos en la red local; si tu red bloquea el descubrimiento, escribes la dirección de HAWK una vez en la app.</p>
       </div>
       <svg class="net-diagram" viewBox="0 0 1240 420" role="img" aria-labelledby="net-t" data-r>
         <title id="net-t">Tu computadora le consulta a HAWK por QUIC. Tu teléfono controla HAWK por QUIC. Si algo es crítico, HAWK le pide al router que aísle la computadora.</title>
@@ -577,7 +577,7 @@ footer { padding: var(--gap-section) 0 40px; }
       <div class="need" data-r>
         <strong>Necesitas</strong>
         <ul>
-          <li>Una Raspberry Pi 4 de 2 GB o más, con Raspberry Pi OS de 64 bits, conectada por cable a tu router.</li>
+          <li>Una Raspberry Pi 4 de 2 GB o más con Raspberry Pi OS de 64 bits, o cualquier computadora con Linux de 64 bits que no sea una de las vigiladas, conectada por cable a tu router.</li>
           <li>Tu teléfono Android, o la app de escritorio para Windows, macOS o Linux.</li>
           <li>Las computadoras donde trabajan tus agentes (Linux, macOS o Windows), en la misma red.</li>
           <li>Opcional: un router OpenWrt o MikroTik, para aislar máquinas.</li>
@@ -585,8 +585,8 @@ footer { padding: var(--gap-section) 0 40px; }
       </div>
       <ol class="guide">
         <li data-r>
-          <h3>Instala HAWK en la Raspberry Pi</h3>
-          <p>Descarga el Core y arráncalo. Muestra su huella al arrancar, se anuncia en la red y niega todo hasta que lo actives.</p>
+          <h3>Instala HAWK en la Raspberry Pi o en el equipo que elijas</h3>
+          <p>Descarga el Core y arráncalo. Muestra su huella al arrancar, se anuncia en la red y niega todo hasta que lo actives. En una computadora x86_64, usa el archivo <code>x86_64-linux</code> de <a href="downloads/">Descargas</a>.</p>
           <div class="cmd">
             <pre><span class="q">$</span> curl -fsSLO \
     https://hawkeeper.xyz/downloads/v0.1.1/hawk-core-0.1.1-aarch64-linux.tar.gz
@@ -597,7 +597,7 @@ footer { padding: var(--gap-section) 0 40px; }
         </li>
         <li data-r>
           <h3>Actívala desde la app</h3>
-          <p>Instala la app desde <a href="downloads/">Descargas</a>. La app encuentra la placa; compara la huella con la que mostró la Pi y empareja con el código de seis dígitos que ven los dos lados.</p>
+          <p>Instala la app desde <a href="downloads/">Descargas</a>. La app encuentra HAWK; compara la huella con la que mostró el Core al arrancar y empareja con el código de seis dígitos que ven los dos lados.</p>
         </li>
         <li data-r>
           <h3>Instala el programa en cada computadora</h3>
@@ -624,8 +624,10 @@ footer { padding: var(--gap-section) 0 40px; }
         <p class="lede" data-r>Lo esencial antes de instalarlo.</p>
       </div>
       <dl class="faq">
-        <div data-r><dt>¿Qué pasa si HAWK se apaga o no responde?</dt><dd>La acción no se ejecuta. Ante un error, un tiempo agotado o una placa sin emparejar, HAWK niega. Solo deja pasar lo que revisó y encontró limpio.</dd></div>
-        <div data-r><dt>¿Qué agentes soporta?</dt><dd>Hoy, OpenCode, con un plugin pequeño que le pregunta a HAWK antes de cada herramienta. Lo probamos con modelos de 7 a 8 mil millones de parámetros servidos con Ollama.</dd></div>
+        <div data-r><dt>¿Qué pasa si HAWK se apaga o no responde?</dt><dd>La acción no se ejecuta. Ante un error, un tiempo agotado o un HAWK sin emparejar, la respuesta es negar.</dd></div>
+        <div data-r><dt>¿Qué agentes soporta?</dt><dd>Hoy, OpenCode, con un plugin pequeño que le pregunta a HAWK antes de cada herramienta.</dd></div>
+        <div data-r><dt>¿Qué detecta hoy?</dt><dd>Un catálogo de reglas: borrar historial o registros, leer o enviar secretos, apagar el monitor o su plugin, shells inversas, ofuscación y escrituras fuera del proyecto. Lo que ninguna regla reconoce se permite y queda registrado. Un clasificador para los casos ambiguos está en desarrollo.</dd></div>
+        <div data-r><dt>¿Necesito una Raspberry Pi?</dt><dd>No. Es la opción pequeña y barata. HAWK corre en cualquier computadora con Linux de 64 bits, ARM o x86_64, siempre que no sea una de las que vigila.</dd></div>
         <div data-r><dt>¿Qué router necesito?</dt><dd>OpenWrt o MikroTik para aislar máquinas. Sin router compatible, HAWK sigue revisando y registrando, y el aislamiento corre en modo de prueba.</dd></div>
         <div data-r><dt>¿Puede el agente borrar el registro?</dt><dd>No. El registro vive en la placa, encadenado y firmado. Si alguien cambia una sola decisión, tu teléfono lo detecta al verificar las firmas.</dd></div>
         <div data-r><dt>¿HAWK puede leer mi código?</dt><dd>HAWK ve las llamadas a herramientas que tiene que decidir. Lo que guarda en el registro queda sellado con una llave que solo tiene tu teléfono: la placa lo escribe, pero no lo puede leer.</dd></div>
