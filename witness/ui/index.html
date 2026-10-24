@@ -28,11 +28,12 @@
         <div class="core-state" id="state" role="status">
           <span class="status-icon" aria-hidden="true">•</span><span class="status-text">Connecting</span>
         </div>
-        <form id="connect" class="core-form">
-          <label for="core-url" class="muted">Core</label>
-          <input id="core-url" value="http://127.0.0.1:8080" spellcheck="false">
-          <button type="submit">Connect</button>
-        </form>
+        <div class="core-id">
+          <span class="core-name" id="core-name"></span>
+          <code class="fp" id="core-fp" title="Core fingerprint"></code>
+          <span class="muted transport">QUIC · mutual TLS</span>
+          <button id="change-core" class="ghost small" type="button">Change Core</button>
+        </div>
       </header>
 
       <div class="filters" role="toolbar" aria-label="Time range">
@@ -47,17 +48,6 @@
       </div>
 
       <section id="banner" class="banner" role="alert" hidden></section>
-
-      <section id="pairing" class="card pairing" hidden>
-        <div>
-          <h2>Pair this Core</h2>
-          <p class="muted">A new Core denies every action until it is paired with this app. After pairing, check that the Core's log shows the same six digits.</p>
-        </div>
-        <div class="pair-actions">
-          <button id="pair" type="button">Pair now</button>
-          <div id="pair-result" class="code"></div>
-        </div>
-      </section>
 
       <section id="overview" class="kpis" aria-label="Summary">
         <div class="card kpi hero">
@@ -98,7 +88,7 @@
         </div>
 
         <div class="card" id="hosts">
-          <div class="card-head"><h2>Hosts</h2></div>
+          <div class="card-head"><h2>Hosts</h2><span class="muted" id="host-count"></span></div>
           <ul class="hosts" id="host-list"></ul>
         </div>
       </section>
@@ -138,6 +128,68 @@
         <div class="identity" id="identity"></div>
         <ol class="heads" id="heads"></ol>
       </section>
+    </div>
+  </div>
+  <div class="wizard" id="wizard" hidden>
+    <div class="wizard-card" role="dialog" aria-modal="true" aria-labelledby="wizard-title">
+      <div class="wizard-head">
+        <div class="logo small-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13l6-2 3-7 3 7 6 2-6 2-3 6-3-6z"/></svg><span>HAWK</span></div>
+        <ol class="steps" id="steps">
+          <li data-step="find">Find</li><li data-step="verify">Verify</li><li data-step="pair">Pair</li><li data-step="configure">Configure</li>
+        </ol>
+      </div>
+
+      <section class="step" data-step="find">
+        <h2 id="wizard-title">Activate a Core</h2>
+        <p class="muted">Cores on this network announce themselves. Pick the one to activate. A new Core denies every action until it is paired with this app.</p>
+        <div class="scan-row">
+          <span class="spinner" id="scan-spinner" aria-hidden="true"></span>
+          <span id="scan-status" class="muted">Searching the network…</span>
+          <button id="scan" class="ghost small" type="button">Search again</button>
+        </div>
+        <ul class="found" id="found"></ul>
+      </section>
+
+      <section class="step" data-step="verify" hidden>
+        <h2>Verify it is your Core</h2>
+        <p class="muted">The Core prints its fingerprint when it starts (<code>core identity fingerprint=…</code>). It must be exactly this one:</p>
+        <div class="big-fp" id="verify-fp"></div>
+        <p class="muted small">The connection is already encrypted and bound to this key; checking it by eye confirms the key belongs to the device in front of you.</p>
+        <div class="actions"><button class="ghost" type="button" data-back="find">Back</button><button id="verify-ok" type="button">It matches</button></div>
+      </section>
+
+      <section class="step" data-step="pair" hidden>
+        <h2>Pair</h2>
+        <p class="muted" id="pair-intro">Creating this app's keys and signing the pairing for this Core and this device only…</p>
+        <div class="big-code" id="pair-code"></div>
+        <p class="muted small" id="pair-hint" hidden>The Core's log shows <code>paired; confirm this code</code> with the same six digits.</p>
+        <div class="actions"><button id="pair-ok" type="button" hidden>The codes match</button></div>
+      </section>
+
+      <section class="step" data-step="configure" hidden>
+        <h2>Configure</h2>
+        <p class="muted">Name the Core and choose where it contains a misbehaving host. The configuration is signed with your owner key.</p>
+        <form id="config-form" class="config">
+          <label>Name<input id="cfg-name" value="HAWK Core" maxlength="48" required></label>
+          <label>Firewall
+            <select id="cfg-fw">
+              <option value="dry_run">Dry run (record only, no router)</option>
+              <option value="mikrotik">MikroTik RouterOS 7</option>
+              <option value="openwrt">OpenWrt</option>
+            </select>
+          </label>
+          <div class="router" id="router-fields" hidden>
+            <label>Router address<input id="cfg-url" placeholder="https://192.168.88.1" spellcheck="false"></label>
+            <label>User<input id="cfg-user" autocomplete="off"></label>
+            <label>Password<input id="cfg-pass" type="password" autocomplete="off"></label>
+            <label>Certificate SHA-256<input id="cfg-cert" placeholder="required for https" spellcheck="false"></label>
+          </div>
+          <div class="actions"><button class="ghost" type="button" id="config-skip">Later</button><button type="submit">Save and open</button></div>
+        </form>
+      </section>
+
+      <p class="wizard-error" id="wizard-error" role="alert" hidden></p>
+      <p class="muted device">This device: <code id="device-fp"></code></p>
     </div>
   </div>
   <script src="app.js"></script>

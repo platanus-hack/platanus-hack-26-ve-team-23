@@ -2,8 +2,8 @@
 #
 #   docker compose run --rm check          fmt, clippy and tests (just check)
 #   docker compose run --rm audit          cargo deny
-#   docker compose up -d guardian          the Guardian, limited like the Pi
-#   docker compose run --rm smoke          smoke test against it
+#   docker compose up -d guardian          the Core (QUIC on 7443/udp), limited like the Pi
+#   docker compose run --rm smoke          QUIC hello against it
 #   docker compose --profile agent up -d   adds Ollama on the GPU
 
 services:
@@ -31,7 +31,7 @@ services:
       context: .
       dockerfile: docker/guardian.Dockerfile
     ports:
-      - "8080:8080"
+      - "7443:7443/udp"
     # Same memory as the Raspberry Pi (ADR-0003), so anything that does not
     # fit there fails here first.
     mem_limit: 2g
@@ -41,13 +41,13 @@ services:
       - guardian-data:/data
 
   smoke:
-    image: curlimages/curl:8.10.1
+    build:
+      context: .
+      dockerfile: docker/guardian.Dockerfile
     depends_on:
       guardian:
         condition: service_healthy
-    volumes:
-      - ./docker/smoke.sh:/smoke.sh:ro
-    entrypoint: ["sh", "/smoke.sh"]
+    entrypoint: ["/usr/local/bin/guardian", "probe", "guardian:7443"]
 
   ollama:
     profiles: ["agent"]

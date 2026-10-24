@@ -13,7 +13,8 @@ const OUTCOMES = [
 ];
 
 let invoke;
-let coreUrl = localStorage.getItem("coreUrl") || $("core-url").value;
+let paired = false;
+let refreshTimer = null;
 let rangeMin = Number(localStorage.getItem("rangeMin") || 60);
 let data = null;
 let inFlight = false;
@@ -70,13 +71,13 @@ function render() {
   const d = data;
   if (!d) return;
   $("updated").textContent = `Updated ${timeFmt(Date.now(), true)}`;
-  $("pairing").hidden = !(d.reachable && d.status && !d.status.paired && !d.paired_here);
 
   if (!d.reachable) {
     setState("critical", "Core unreachable");
     showBanner(d.error);
     return;
   }
+  if (d.status.name) $("core-name").textContent = d.status.name;
   const paired = d.status.paired;
   if (!paired) setState("warning", "Unpaired: every action is denied");
   else if (d.identity_matches === false) setState("critical", "Core identity changed");
@@ -99,7 +100,7 @@ function render() {
   renderKpis(decisions, containments, d);
   renderChart(decisions);
   renderRules(decisions);
-  renderHosts(events);
+  renderHosts(d.hosts || [], events);
   renderEvents(events);
   renderIntegrity(d);
 }
@@ -252,31 +253,59 @@ function renderRules(decisions) {
   }
 }
 
-function renderHosts(events) {
+function renderHosts(hosts, events) {
   const list = $("host-list");
   list.replaceChildren();
-  const hosts = new Map();
+  // Activity in range per address, from the record.
+  const activity = new Map();
   for (const e of events) {
     if (!e.host) continue;
-    const h = hosts.get(e.host) || { last: 0, calls: 0, denied: 0, contained: false };
-    h.last = Math.max(h.last, e.timestamp_ms);
-    if (e.kind === "decision") h.calls += 1;
-    if (e.decision === "deny") h.denied += 1;
-    if (e.kind === "containment") h.contained = true;
-    hosts.set(e.host, h);
+    const a = activity.get(e.host) || { calls: 0, denied: 0, contained: false };
+    if (e.kind === "decision") a.calls += 1;
+    if (e.decision === "deny") a.denied += 1;
+    if (e.kind === "containment") a.contained = true;
+    activity.set(e.host, a);
   }
-  if (!hosts.size) {
-    list.appendChild(el("li", "No host has reported in this range.", "muted"));
+  const connected = hosts.filter((h) => h.connected).length;
+  $("host-count").textContent = hosts.length ? `${connected} of ${hosts.length} connected` : "";
+  if (!hosts.length) {
+    list.appendChild(el("li", "No host daemon has connected to this Core yet.", "muted"));
     return;
   }
-  for (const [addr, h] of [...hosts.entries()].sort((a, b) => b[1].last - a[1].last)) {
-    const li = el("li");
-    const chip = el("span", h.contained ? "Contained" : "Active", `chip ${h.contained ? "contained" : "allow"}`);
+  for (const h of hosts) {
+    const a = activity.get(h.address) || { calls: 0, denied: 0, contained: false };
+    const li = el("li", undefined, "host");
+    let state;
+    if (a.contained) state = el("span", "Contained", "chip contained");
+    else if (h.connected) state = el("span", "Connected", "chip allow");
+    else state = el("span", "Offline", "chip neutral");
+    const identify = el("button", "Identify", "ghost small");
+    identify.type = "button";
+    identify.title = "Show a notice on this machine's screen";
+    identify.disabled = !h.connected;
+    identify.addEventListener("click", async () => {
+      identify.disabled = true;
+      try {
+        await invoke("identify_host", { host: h.id });
+        identify.textContent = "Sent";
+      } catch (err) {
+        identify.textContent = "Failed";
+        showBanner(String(err));
+      } finally {
+        setTimeout(() => {
+          identify.textContent = "Identify";
+          identify.disabled = !h.connected;
+        }, 4000);
+      }
+    });
+    const actions = el("div", undefined, "host-actions");
+    actions.append(state, identify);
+    const name = el("div");
+    name.append(el("span", h.hostname || h.address, "addr"), document.createTextNode(" "), el("code", h.fingerprint, "fp"));
     li.append(
-      el("span", addr, "addr"),
-      chip,
-      el("span", `${h.calls} calls · ${h.denied} denied`, "meta"),
-      el("span", `last ${timeFmt(h.last)}`, "meta time"),
+      name,
+      actions,
+      el("span", `${h.address} · ${h.os} · ${a.calls} calls · ${a.denied} denied · seen ${timeFmt(h.last_seen_ms)}`, "meta"),
     );
     list.appendChild(li);
   }
@@ -349,7 +378,7 @@ async function refresh() {
   inFlight = true;
   try {
     // The previous render stays on screen while this loads: no flash.
-    data = await invoke("dashboard", { coreUrl });
+    data = await invoke("dashboard");
     render();
   } catch (err) {
     setState("critical", "Error");
@@ -360,17 +389,9 @@ async function refresh() {
 }
 
 function wire() {
-  $("core-url").value = coreUrl;
   const theme = localStorage.getItem("theme") || "dark";
   document.documentElement.dataset.theme = theme;
   $("theme").textContent = theme === "dark" ? "Light theme" : "Dark theme";
-
-  $("connect").addEventListener("submit", (event) => {
-    event.preventDefault();
-    coreUrl = $("core-url").value.trim();
-    localStorage.setItem("coreUrl", coreUrl);
-    refresh();
-  });
 
   for (const button of $("range").querySelectorAll("button")) {
     button.classList.toggle("on", Number(button.dataset.min) === rangeMin);
@@ -403,24 +424,164 @@ function wire() {
     });
   }
 
-  $("pair").addEventListener("click", async () => {
-    $("pair").disabled = true;
-    try {
-      const result = await invoke("pair_core", { coreUrl });
-      $("pair-result").textContent = result.confirmation_code;
-      $("pair-result").title = "Check that the Core's log shows this code";
-    } catch (err) {
-      $("pair-result").textContent = "";
-      showBanner(String(err));
-    } finally {
-      $("pair").disabled = false;
-      refresh();
-    }
+  $("change-core").addEventListener("click", async () => {
+    const question = "Forget this Core on this device and run the activation again? The Core keeps its pairing until it is reset.";
+    if (!confirm(question)) return;
+    await invoke("forget_core");
+    openWizard();
   });
+  wireWizard();
 
   for (const id of ["f-outcome", "f-severity"]) $(id).addEventListener("change", render);
   $("f-text").addEventListener("input", render);
   window.addEventListener("resize", render);
+}
+
+// Activation wizard (ADR-0024) ------------------------------------------------
+
+let chosen = null;
+const STEPS = ["find", "verify", "pair", "configure"];
+
+function wizardStep(step) {
+  for (const section of document.querySelectorAll(".wizard .step")) section.hidden = section.dataset.step !== step;
+  for (const li of $("steps").children) {
+    const at = STEPS.indexOf(li.dataset.step);
+    const now = STEPS.indexOf(step);
+    li.className = at < now ? "done" : at === now ? "current" : "";
+  }
+  wizardError("");
+}
+
+function wizardError(text) {
+  $("wizard-error").hidden = !text;
+  $("wizard-error").textContent = text || "";
+}
+
+async function scan() {
+  $("scan-spinner").classList.remove("idle");
+  $("scan-status").textContent = "Searching the network…";
+  $("scan").disabled = true;
+  const list = $("found");
+  list.replaceChildren();
+  try {
+    const cores = await invoke("discover");
+    $("scan-status").textContent = cores.length
+      ? `${cores.length} found`
+      : "No Core found. Check that it is powered and on this network.";
+    for (const core of cores) {
+      const li = el("li");
+      const pick = el("button", undefined, "pick");
+      pick.type = "button";
+      const unpaired = core.state === "unpaired";
+      pick.disabled = !unpaired;
+      pick.title = unpaired ? "Activate this Core" : "Already activated by another device";
+      pick.append(
+        el("span", core.name, "f-name"),
+        el("span", unpaired ? "Ready to activate" : "Already active", `chip f-state ${unpaired ? "ask" : "neutral"}`),
+        el("span", `${core.fingerprint} · ${core.address}`, "f-meta"),
+      );
+      pick.addEventListener("click", () => {
+        chosen = core;
+        $("verify-fp").textContent = core.fingerprint;
+        wizardStep("verify");
+      });
+      li.appendChild(pick);
+      list.appendChild(li);
+    }
+  } catch (err) {
+    $("scan-status").textContent = "Discovery failed.";
+    wizardError(String(err));
+  } finally {
+    $("scan-spinner").classList.add("idle");
+    $("scan").disabled = false;
+  }
+}
+
+async function pair() {
+  wizardStep("pair");
+  $("pair-code").textContent = "";
+  $("pair-hint").hidden = true;
+  $("pair-ok").hidden = true;
+  $("pair-intro").textContent = "Creating this app's keys and signing the pairing for this Core and this device only…";
+  try {
+    const result = await invoke("pair_core", { id: chosen.id, address: chosen.address });
+    $("pair-intro").textContent = "Paired. Both screens must show the same code:";
+    $("pair-code").textContent = result.confirmation_code;
+    $("pair-hint").hidden = false;
+    $("pair-ok").hidden = false;
+  } catch (err) {
+    $("pair-intro").textContent = "Pairing failed.";
+    wizardError(String(err));
+  }
+}
+
+function firewallConfig() {
+  const kind = $("cfg-fw").value;
+  if (kind === "dry_run") return { kind };
+  const base = {
+    kind,
+    url: $("cfg-url").value.trim(),
+    user: $("cfg-user").value.trim(),
+    password: $("cfg-pass").value,
+    cert_sha256: $("cfg-cert").value.trim() || null,
+  };
+  return kind === "mikrotik" ? { ...base, list: null } : base;
+}
+
+function wireWizard() {
+  $("scan").addEventListener("click", scan);
+  $("verify-ok").addEventListener("click", pair);
+  $("pair-ok").addEventListener("click", () => wizardStep("configure"));
+  for (const back of document.querySelectorAll("[data-back]")) {
+    back.addEventListener("click", () => wizardStep(back.dataset.back));
+  }
+  $("cfg-fw").addEventListener("change", () => {
+    $("router-fields").hidden = $("cfg-fw").value === "dry_run";
+  });
+  $("config-skip").addEventListener("click", () => closeWizard());
+  $("config-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      const name = await invoke("configure_core", { name: $("cfg-name").value, firewall: firewallConfig() });
+      $("core-name").textContent = name;
+      $("cfg-pass").value = "";
+      closeWizard();
+    } catch (err) {
+      wizardError(String(err));
+    }
+  });
+}
+
+function openWizard() {
+  paired = false;
+  if (refreshTimer) clearInterval(refreshTimer);
+  $("wizard").hidden = false;
+  wizardStep("find");
+  scan();
+}
+
+async function closeWizard() {
+  $("wizard").hidden = true;
+  await loadIdentity();
+  startRefresh();
+}
+
+async function loadIdentity() {
+  const info = await invoke("app_info");
+  $("version").textContent = `v${info.version}`;
+  $("device-fp").textContent = info.device_fingerprint;
+  paired = Boolean(info.core);
+  if (info.core) {
+    $("core-name").textContent = info.core.name || "HAWK Core";
+    $("core-fp").textContent = info.core.fingerprint;
+  }
+  return info;
+}
+
+function startRefresh() {
+  if (refreshTimer) clearInterval(refreshTimer);
+  refresh();
+  refreshTimer = setInterval(refresh, REFRESH_MS);
 }
 
 async function boot() {
@@ -436,15 +597,10 @@ async function boot() {
     });
   }
   invoke = window.__TAURI__.core.invoke;
-  try {
-    const info = await invoke("app_info");
-    $("version").textContent = `v${info.version}`;
-  } catch {
-    $("version").textContent = "";
-  }
   wire();
-  refresh();
-  setInterval(refresh, REFRESH_MS);
+  const info = await loadIdentity();
+  if (info.core) startRefresh();
+  else openWizard();
 }
 
 boot();

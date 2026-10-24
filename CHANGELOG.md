@@ -10,6 +10,19 @@ Every entry is written when the change is merged, under `Unreleased`.
 
 ### Added
 
+- ADR-0023 and ADR-0024: QUIC with mutual TLS between all our edges (the
+  Core has no HTTP endpoint) and discovery with an activation wizard.
+- Pairing binds the app's device identity; the Core serves its record and
+  configuration only to that identity; owner-signed configuration applied
+  live (name, firewall).
+- Host registry by fingerprint and the identify signal: the app asks a
+  monitored machine to show a notice on its screen.
+- Host daemon over QUIC with its own identity, Core discovery and pinning.
+- Owner app: activation wizard, hosts with Identify, Core identity in the
+  header instead of an address field.
+- `guardian probe` and a QUIC health check for Docker; `CLAUDE.md` with the
+  ADR process and the hard rules.
+
 - ADR-0001 to ADR-0011: scope, topology, interception, detection, hash
   chain, two-key access, recovery, agent under test, evaluation, licences.
 - Repository structure, standards and agent instructions adapted from

@@ -4,8 +4,17 @@ The record format: event encoding, the hash chain and the types the hook and
 the Guardian exchange. Every other crate depends on it; it depends on none of
 them (ADR-0012).
 
-- **Status:** event encoding, hash chain and verification implemented with
-  tests. Signed heads and epoch encryption planned (ADR-0006, ADR-0007).
+- **Status:** event encoding and decoding, hash chain and verification,
+  hybrid signed heads (Ed25519 + ML-DSA-65), sealing to the epoch key,
+  pairing helpers and the QUIC wire messages, all with tests.
+
+## Modules
+
+- `wire`: requests and responses between the edges over QUIC (ADR-0023).
+- `pairing`: the pairing message (Core, nonce, app identity) and the
+  confirmation code.
+- `keys`, `head`, `seal`: Core signing keys, hybrid signed heads, sealing to
+  the epoch key.
 
 ## Main types
 

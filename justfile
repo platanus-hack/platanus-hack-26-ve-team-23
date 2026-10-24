@@ -30,9 +30,17 @@ check: fmt-check lint test
 audit:
     cargo deny check
 
-# Run the Guardian locally.
+# Run the Core locally (QUIC on 0.0.0.0:7443).
 guardian:
     cargo run -p guardian
+
+# QUIC hello against a Core.
+probe addr="127.0.0.1:7443":
+    cargo run -p guardian -- probe {{addr}}
+
+# Run the host daemon (loopback HTTP for the hook, QUIC to the Core).
+daemon:
+    cargo run -p host-daemon
 
 # The witness app on the desktop.
 witness:
@@ -50,7 +58,7 @@ build-pi:
 docker-check:
     docker compose run --rm check
 
-# Guardian in a container limited to 2 GB, then the smoke test.
+# The Core in a container limited to 2 GB, then a QUIC hello against it.
 docker-smoke:
     docker compose up -d --build guardian
     docker compose run --rm smoke

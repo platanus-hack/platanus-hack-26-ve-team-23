@@ -1,43 +1,48 @@
 # guardian
 
-The daemon on the Raspberry Pi. Wires `detect`, `llm-proxy` and
-`guardian-core` together.
+The Core: decides, records, contains and serves the owner's app. Runs on the
+Raspberry Pi (2 GB, Linux, arm64); in Docker it is limited to 2 GB to match.
 
-- **Runs on:** Raspberry Pi, 2 GB of RAM, Linux (arm64). In Docker, limited
-  to 2 GB to match.
-- **Status:** pairing, sealed and chained record with signed heads, witness
-  endpoints, decisions through the rule engine and policy, containment on the
-  firewall and publishing to sinks. Concrete rules, host heartbeats, the LLM
-  proxy and the cross-check are pending (`PENDIENTES.md`).
+- **Status:** QUIC with mutual TLS on `GUARDIAN_ADDR` (UDP, default
+  `0.0.0.0:7443`), mDNS announcement, pairing bound to the app identity,
+  owner-signed configuration, sealed and chained record with hybrid signed
+  heads, containment on the firewall, sinks, host registry and identify.
+  Pending: rule catalogue (team), host heartbeats and enrolment (team), LLM
+  proxy cross-check, opening the record, releasing a quarantine. See
+  `PENDIENTES.md`.
 
-## Endpoints
+## Messages (`guardian_core::wire`)
 
-| Endpoint | Purpose |
-|---|---|
-| `GET /health` | Liveness, returns `ok` |
-| `GET /identity` | The Core's public keys (Ed25519 and ML-DSA-65) |
-| `GET /pair`, `POST /pair` | Pairing offer and pairing (only while unpaired) |
-| `GET /status`, `/heads`, `/events` | State, signed heads and event metadata for the witness (`?since=N`) |
-| `POST /decide` | Body: `ToolCall` JSON. Answer: `{"decision":"allow"}`, `{"decision":"deny","reason":...}` or `{"decision":"ask","reason":...}` |
+| Request | Who may send it | Answer |
+|---|---|---|
+| `hello` | anyone | identity, paired, configuration summary |
+| `pair_offer`, `pair` | anyone, while unpaired | offer; then the confirmation code |
+| `configure` | the paired app, with the owner's signature | configuration summary |
+| `status`, `events`, `heads`, `hosts`, `identify` | the paired app only | state, event metadata, signed heads, hosts, ack |
+| `decide` | host daemons | decision |
+| `host_hello` | host daemons | ack |
 
-Configuration: `GUARDIAN_ADDR` (default `0.0.0.0:8080`), `GUARDIAN_DATA_DIR`,
-`GUARDIAN_FIREWALL` (+ the router variables of `integrations`), `KAFKA_BROKERS`,
-`GUARDIAN_WEBHOOK_URL`, `RUST_LOG`.
+The Core has no HTTP endpoint (ADR-0023). `guardian probe ADDR` sends a QUIC
+hello from a throwaway identity and prints the answer.
 
-A critical finding quarantines the TCP peer of the request on the firewall
-(never a host the client declares), records a `containment` event and
-publishes to the sinks.
+Configuration: `GUARDIAN_ADDR`, `GUARDIAN_DATA_DIR` (default
+`./guardian-data`), `GUARDIAN_FIREWALL` and the router variables of
+`integrations` (used until the owner configures the Core from the app),
+`KAFKA_BROKERS`, `GUARDIAN_WEBHOOK_URL`, `RUST_LOG`.
+
+At start the Core logs `core identity fingerprint=…`: the owner compares it
+in the activation wizard.
 
 ## What it must never do
 
-- Allow an action when a detector fails, the body is malformed or too large
-  (256 KiB cap), or a lock is poisoned.
+- Allow an action when a detector fails, the request is malformed, the Core
+  is unpaired, or the decision cannot be recorded.
+- Serve its record or accept configuration from anyone but the app bound at
+  pairing.
+- Quarantine an address a client declares; only the authenticated peer's.
 - Run any model of 1.5B parameters or above.
-- Store decryption keys for past epochs.
-- Accept connections from the PC other than the decision and proxy
-  endpoints.
+- Hold a key that decrypts the record.
 
 ## Tests
 
-`cargo test -p guardian`, and against a running instance
-`docker compose run --rm smoke`.
+`cargo test -p guardian`, and against a running Core `just probe`.

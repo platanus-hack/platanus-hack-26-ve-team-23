@@ -102,4 +102,7 @@ Removes axum, tower and tower-http from ADR-0014's list.
 
 ## History
 
+- v1.1 (2026-10-24): The links between edges move to QUIC with mutual TLS
+  (ADR-0023); hyper remains only for the host daemon's loopback endpoint.
+
 - v1.0 (2026-10-24): Initial decision.

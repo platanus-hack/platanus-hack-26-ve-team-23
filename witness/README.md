@@ -1,26 +1,42 @@
 # witness
 
-The owner's app: independent witness of the record and holder of the two
-keys. One Tauri 2 crate builds both the desktop app and the Android APK
-(ADR-0013).
+The owner's app: it controls the Core from the phone. One Tauri 2 crate
+builds the Android APK and a desktop build used for development (ADR-0013).
 
-- **Status:** connected to the Core. Pairing, the Datadog-style dashboard
-  (state, tiles, decisions per minute, top rules, filterable event stream)
-  and verification of every signed head against the identity pinned at
-  pairing. Opening the sealed record, `ask` answers and alerts push are
-  pending (see `PENDIENTES.md`).
+- **Status:** QUIC with mutual TLS to the Core with its own device identity;
+  activation wizard (find by mDNS, verify fingerprint, pair, configure);
+  dashboard (state, decisions over time, rules, hosts, events, integrity);
+  every signed head verified against the identity pinned at pairing; hosts
+  listed by fingerprint with an Identify button. Pending: opening the sealed
+  record, answering `ask`, alerts, Android Keystore, multicast lock and
+  passkeys (see `PENDIENTES.md`).
 
-## Screens
+## Activation wizard (ADR-0024)
 
-Styled like an observability dashboard (Datadog-like), see ADR-0013:
+1. **Find:** Cores announcing themselves on the network, with state and
+   fingerprint. Only unpaired ones can be activated.
+2. **Verify:** compare the fingerprint with the Core's log line
+   `core identity fingerprint=…`.
+3. **Pair:** the app creates its keys and signs the pairing for that Core,
+   that offer and this device; both sides show the same six digits.
+4. **Configure:** name and firewall (dry run, MikroTik, OpenWrt), signed by
+   the owner and applied by the Core immediately.
 
-1. **Pairing** (while the Core is unpaired, ADR-0017): scan the Core's code,
-   create the owner passkey, confirm the short code.
-2. **Overview:** Core state, hosts, counters, decisions per minute, top
-   rules.
-3. **Events:** live stream with filters by host, session, tool, severity.
-4. **Alerts:** denied actions, evasion alerts, `ask` decisions to answer.
-5. **Record:** signed heads, verification, opening with the passkey.
+"Change Core" forgets the Core on this device and runs the wizard again.
+
+## Keys
+
+In the app's data directory for the desktop build and the demo:
+`device.key` (Ed25519, transport identity), `owner.key` (P-256, owner
+signatures), `epoch.key` (X25519, opens the record), `pinned.json` (the
+Core's public keys), `core.json` (its id, last address and name). On Android
+they move to the Keystore.
+
+## Preview
+
+Open `ui/index.html` in a browser: outside Tauri it loads `ui/preview.js`
+with sample data (`?wizard` starts in the activation). Inside the app that
+file is never loaded.
 
 ## Build
 

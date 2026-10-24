@@ -10,7 +10,8 @@ Core boots
 ├── UNPAIRED
 │   ├── /decide -> DENY everything
 │   ├── records nothing
-│   └── exposes only /pair -> phone scans, creates passkey, codes confirmed
+│   └── announces itself by mDNS; the app finds it, the owner verifies the
+│       fingerprint, pairs over QUIC and confirms the six-digit code
 │       └── OK -> "Paired" event (first in the chain) -> ACTIVE
 └── ACTIVE -> everything below
 ```
@@ -21,7 +22,7 @@ Core boots
 Model proposes a tool call
 ├─[A] PROXY on the Core: records request and response, extracts the call,
 │     opens a cross-check window (5 s)
-└─[B] HOOK -> host daemon (127.0.0.1) -> Core /decide
+└─[B] HOOK -> host daemon (loopback HTTP) -> Core `decide` over QUIC (pinned)
       ├── daemon unreachable ........ hook -> DENY
       ├── Core unreachable .......... daemon -> DENY
       ├── malformed or oversized .... DENY

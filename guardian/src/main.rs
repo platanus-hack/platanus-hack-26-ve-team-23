@@ -56,7 +56,10 @@ fn announce(core: &core::Core, port: u16) -> Option<discovery::Announcement> {
 // The probe's purpose is to print for the operator.
 #[allow(clippy::print_stdout)]
 async fn probe(addr: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let addr: SocketAddr = addr.parse()?;
+    let addr: SocketAddr = tokio::net::lookup_host(addr)
+        .await?
+        .next()
+        .ok_or("could not resolve the core address")?;
     let key = ed25519_dalek::SigningKey::generate(&mut rand::rngs::OsRng);
     let client = quic::Client::new(quic::TlsIdentity::from_signing_key(&key, "hawk-probe")?)?;
     let (conn, id) = client.connect(addr, None).await?;

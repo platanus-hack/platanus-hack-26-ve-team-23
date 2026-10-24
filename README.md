@@ -3,21 +3,24 @@
 **Hardware Autonomous Watcher & Keeper** (tentative name).
 
 An AI control monitor for coding agents that lives on separate hardware. It
-sees every tool call the agent attempts, blocks the dangerous ones, and keeps
-a tamper-evident record that the agent cannot rewrite, witnessed by the
-owner's phone and opened only with two keys.
+stops dangerous agent actions before they run, contains the machine at the
+network firewall when the agent tries to get around it, and keeps a record
+the agent cannot rewrite, verified by the owner's phone.
 
 Platanus Hack 26: Caracas. Track: AI Security (AI control). Team 23.
 
 <img src="./project-logo.png" alt="Project logo" width="200" />
 
-> Status: connected. OpenCode plugin -> host daemon -> Core `/decide` fails
-> closed; the Core pairs with the witness app, seals and chains every
-> decision, signs heads (Ed25519 + ML-DSA), contains hosts on the firewall
-> and publishes to Kafka or a webhook; the witness shows it all in a
-> dashboard and verifies the heads. Concrete detection rules, the heartbeat
-> and the LLM proxy are pending (see `PENDIENTES.md`). Decisions are in [`docs/adr`](docs/adr/README.md); the full flow is
-> in [`docs/ACTION-TREE.md`](docs/ACTION-TREE.md). Coding agents start with [AGENTS.md](AGENTS.md).
+> **Status.** Working end to end: the OpenCode plugin asks the host daemon on
+> loopback; the daemon relays over QUIC with mutual TLS to the Core; the Core
+> decides, seals and chains every decision, signs heads (Ed25519 + ML-DSA-65)
+> and contains hosts on the firewall. The owner's phone app finds the Core on
+> the network, activates it with a wizard, shows the dashboard, verifies the
+> heads and can make any monitored machine identify itself. Detection rules,
+> host heartbeats and the LLM proxy are pending: see
+> [`PENDIENTES.md`](PENDIENTES.md). Decisions: [`docs/adr`](docs/adr/README.md).
+> Flow: [`docs/ACTION-TREE.md`](docs/ACTION-TREE.md). Coding agents:
+> [`CLAUDE.md`](CLAUDE.md).
 
 ## The problem
 
@@ -31,88 +34,95 @@ HAWK controls the agent, not the model
 ([ADR-0002](docs/adr/0002-control-the-agent-not-the-model.md)): it covers the
 layer of actions and evidence that content guardrails do not.
 
+## The three edges
+
+```
+ Monitored machine                    Core (Raspberry Pi)                 Owner's phone
+ OpenCode --hook--> host daemon ==QUIC==> decide: rules + policy   <==QUIC== HAWK app
+            loopback   | identity        seal + chain + sign heads           activate (wizard)
+                       | pin             contain at the firewall             dashboard, verify heads
+            notice <---+---- identify -- hosts by fingerprint  <--identify-- find a machine
+```
+
+- **Core** (`guardian`): decides, records, contains. Inactive until the
+  owner's app pairs with it ([ADR-0017](docs/adr/0017-core-pairing-and-passkeys.md)).
+- **Host daemon** (`host-daemon`): runs on every monitored machine. Relays the
+  agent hook, has no UI except the identification notice.
+- **Owner app** (`witness`): the phone app that controls everything (APK; a
+  desktop build exists for development).
+
+Every link between them is QUIC with mutual TLS 1.3, and each certificate's
+Ed25519 key is the identity ([ADR-0023](docs/adr/0023-quic-with-mutual-tls-between-edges.md)).
+The Core announces itself by mDNS and the app activates it with a wizard;
+nobody types addresses ([ADR-0024](docs/adr/0024-discovery-and-activation-wizard.md)).
+
 ## How a tool call flows
 
-```
-PC (untrusted host)                 Raspberry Pi (Guardian)            Phone
-OpenCode --hook: may I run X?-----> policy: rules + classifier
-   |      <---allow / deny---------
-   |                                hash chain  ---signed head------> witness
-   +--LLM requests to Pi proxy----> proxy logs prompts and tool calls  two keys
-Ollama (RTX 4070) <---forwarded---- cross-check hook vs proxy ---alert-> alerts
-```
-
-1. The model proposes a tool call. The request and the response pass through
-   the proxy on the Pi, which records them.
-2. Before running the tool, the OpenCode hook asks the Guardian. Rules, then a
-   small classifier, decide: allow, deny, or ask the owner. No answer means
-   deny.
-3. Every event is appended to a hash chain on the Pi. Signed chain heads go
-   to the phone, so a rewritten record no longer matches.
-4. If the proxy saw a tool call that never reached the hook, the agent
-   bypassed its monitor, and the phone gets an alert.
-5. Reading the record needs the owner passkey and the weekly decryption key,
-   both on the phone.
-
-6. On an evasion or an exfiltration attempt, the Core puts the host in the
-   quarantine list of the network firewall (OpenWrt and MikroTik, then
-   Cisco), so even a host with root access is cut off
+1. Before running a tool, the OpenCode plugin asks the host daemon on
+   loopback. If the daemon does not answer, the tool does not run.
+2. The daemon relays the call to the Core over QUIC, pinned to the Core's
+   identity. If the Core cannot be reached, the daemon denies.
+3. The Core evaluates the call: rules and, later, a small classifier; the
+   highest severity decides: allow, ask the owner, deny, or deny and contain
+   ([ADR-0022](docs/adr/0022-decision-policy-severities-and-defaults.md)).
+4. Every decision is sealed to the owner's weekly key, appended to a hash
+   chain and covered by heads signed with Ed25519 and ML-DSA-65
+   ([ADR-0019](docs/adr/0019-post-quantum-signatures-on-heads.md)). The Core
+   can write the record but cannot read it.
+5. On a critical finding the Core puts the machine in the quarantine list of
+   the network firewall (OpenWrt, MikroTik; Cisco next), so even a machine
+   with root access is cut off
    ([ADR-0018](docs/adr/0018-network-containment-through-the-firewall.md)).
-
-A new Core does nothing until it is paired with the owner's phone
-([ADR-0017](docs/adr/0017-core-pairing-and-passkeys.md)). Chain heads carry
-hybrid Ed25519 + ML-DSA signatures
-([ADR-0019](docs/adr/0019-post-quantum-signatures-on-heads.md)).
-Events are published to Kafka, webhooks and SIEMs (CEF syslog), metadata
-only ([ADR-0020](docs/adr/0020-integrations-firewalls-and-event-sinks.md)).
+6. Event metadata goes to Kafka or a webhook
+   ([ADR-0020](docs/adr/0020-integrations-firewalls-and-event-sinks.md)).
 
 **Prevent, not just record.** A black box tells you why the plane crashed;
-HAWK stops the action before it runs, and contains the host at the network
-when the agent tries to get around it. A record sealed on the infected
+HAWK stops the action before it runs. A record sealed on the infected
 machine only proves what the attacker let it seal; HAWK seals on a separate
 device.
 
 ## Components
 
-Back end in Rust, one Cargo workspace
-([ADR-0012](docs/adr/0012-rust-workspace-and-crate-boundaries.md)); front end
-in Tauri 2, one crate for desktop and APK
-([ADR-0013](docs/adr/0013-tauri-front-end.md)); the monitor is our own
-implementation on top of established primitives
-([ADR-0014](docs/adr/0014-own-implementation-established-primitives.md)).
+Rust workspace ([ADR-0012](docs/adr/0012-rust-workspace-and-crate-boundaries.md)),
+Tauri 2 app ([ADR-0013](docs/adr/0013-tauri-front-end.md)), our own monitor
+on established primitives ([ADR-0014](docs/adr/0014-own-implementation-established-primitives.md)).
 
 | Layer | Crate | Runs on | Responsibility |
 |---|---|---|---|
-| Record format | [guardian-core](guardian-core/README.md) | everywhere | Event encoding, hash chain, shared types. No I/O |
-| Detection | [detect](detect/README.md) | Raspberry Pi | Rules, sequence rules, classifier |
-| Proxy | [llm-proxy](llm-proxy/README.md) | Raspberry Pi | OpenAI-compatible proxy to Ollama, tool-call extraction |
-| Networking | [edge-net](edge-net/README.md) | Core and hosts | HTTP on hyper and tokio; framed protocol between edges |
-| Core | [guardian](guardian/README.md) | Raspberry Pi | Daemon: pairing, `/decide`, proxy, cross-check, chain store |
-| Host daemon | [host-daemon](host-daemon/README.md) | Every machine running agents | Relays hooks to the Core, sensors, heartbeat; never decides |
-| Witness | [witness](witness/README.md) | Phone (APK) and desktop | Tauri 2 app: heads, alerts, keys, verifier |
-| Evaluation | [eval](eval/README.md) | PC + Pi | Tasks, runner, metrics, classifier training |
-| Agent hook | [agent-hook](agent-hook/README.md) | PC | Thin TypeScript OpenCode plugin; asks the Guardian, fails closed |
+| Record and wire | [guardian-core](guardian-core/README.md) | everywhere | Events, hash chain, signed heads, sealing, wire messages. No I/O |
+| Detection | [detect](detect/README.md) | Core | Rule engine and policy (rule catalogue pending) |
+| Networking | [edge-net](edge-net/README.md) | everywhere | QUIC with mutual TLS, mDNS discovery, loopback HTTP |
+| Integrations | [integrations](integrations/README.md) | Core | Firewalls (dry run, MikroTik, OpenWrt), Kafka and webhook |
+| Core | [guardian](guardian/README.md) | Raspberry Pi | Pairing, decisions, record, containment, hosts, identify |
+| Host daemon | [host-daemon](host-daemon/README.md) | Monitored machines | Hook relay over QUIC, Core pinning, identification notice |
+| Owner app | [witness](witness/README.md) | Phone (APK), desktop for dev | Activation wizard, dashboard, verification, identify |
+| Agent hook | [agent-hook](agent-hook/README.md) | Monitored machines | Thin TypeScript OpenCode plugin; fails closed |
+| LLM proxy | [llm-proxy](llm-proxy/README.md) | Host daemon | Planned |
+| Evaluation | [eval](eval/README.md) | PC + Core | Planned |
 
-## Build and test
-
-```sh
-just check          # fmt, clippy (warnings are errors) and tests
-just guardian       # run the Guardian on :8080
-just witness        # run the witness on the desktop
-just witness-apk    # build the witness APK (Android SDK and NDK)
-```
-
-With Docker, no local toolchain is needed:
+## Build and run
 
 ```sh
-docker compose run --rm check     # fmt, clippy and tests in a container
-docker compose up -d guardian     # Guardian limited to 2 GB, like the Pi
-docker compose run --rm smoke     # it answers and fails closed
+just check                  # fmt, clippy (warnings are errors) and tests
+just guardian               # the Core: QUIC on 0.0.0.0:7443, announced by mDNS
+just probe 127.0.0.1:7443   # QUIC hello against a Core
+just daemon                 # a host daemon (GUARDIAN_CORE=ip:7443 to skip discovery)
+just witness                # the owner app on the desktop
+just witness-apk            # the owner app as an APK (Android SDK and NDK)
 ```
 
-The agent under test is OpenCode with a 7B to 8B model served by Ollama on
-the PC ([ADR-0009](docs/adr/0009-agent-under-test-opencode-ollama.md)). The
-same proxy can front the Claude or OpenAI APIs.
+To review the app's design without a Core, open `witness/ui/index.html` in a
+browser (add `?wizard` to see the activation).
+
+With Docker (not yet tested on this machine):
+
+```sh
+docker compose run --rm check   # fmt, clippy and tests in a container
+just docker-smoke               # the Core limited to 2 GB, then a QUIC hello
+```
+
+The agent under test is OpenCode with a 7B to 8B model served by Ollama
+([ADR-0009](docs/adr/0009-agent-under-test-opencode-ollama.md)).
 
 ## What HAWK is not
 
@@ -126,10 +136,11 @@ same proxy can front the Claude or OpenAI APIs.
 
 | What | Where |
 |---|---|
-| Orientation for coding agents | [AGENTS.md](AGENTS.md) |
+| Instructions for coding agents | [CLAUDE.md](CLAUDE.md) |
 | Design and threat model | [docs/WHITEPAPER.md](docs/WHITEPAPER.md) |
 | Demo script | [docs/DEMO.md](docs/DEMO.md) |
-| Milestones | [docs/ROADMAP.md](docs/ROADMAP.md) |
+| Milestones and state | [docs/ROADMAP.md](docs/ROADMAP.md) |
+| What is missing and why | [PENDIENTES.md](PENDIENTES.md) |
 | Why it works this way | [docs/adr](docs/adr/README.md) |
 | Proposals under discussion | [docs/rfcs](docs/rfcs/README.md) |
 | How work is done | [docs/standards](docs/standards/README.md), [CONTRIBUTING.md](CONTRIBUTING.md) |

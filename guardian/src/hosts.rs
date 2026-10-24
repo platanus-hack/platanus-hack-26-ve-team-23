@@ -35,6 +35,12 @@ impl Hosts {
     pub fn connected(&self, peer: PeerId, conn: Connection) {
         let address = conn.remote_address().ip().to_string();
         if let Ok(mut entries) = self.entries.lock() {
+            // Forget closed connections of peers that never introduced
+            // themselves (probes, health checks), so they do not pile up.
+            entries.retain(|_, e| {
+                !e.hostname.is_empty()
+                    || e.conn.as_ref().is_some_and(|c| c.close_reason().is_none())
+            });
             let entry = entries.entry(peer).or_insert_with(|| Entry {
                 conn: None,
                 address: address.clone(),

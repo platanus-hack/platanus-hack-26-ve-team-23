@@ -49,13 +49,15 @@ supersedes it; the old one only has its status updated.
 | [0013](0013-tauri-front-end.md) | Tauri 2 for every front end, desktop and APK from one crate | Proposed |
 | [0014](0014-own-implementation-established-primitives.md) | Our own implementation of the monitor, established crates for primitives | Proposed |
 | [0015](0015-three-edges-host-daemon-core-mobile.md) | Three edges: a daemon on every host, the Core on the Pi, the mobile app | Proposed |
-| [0016](0016-hyper-on-tokio-and-own-framed-protocol.md) | hyper directly on tokio for HTTP; our own framed protocol between edges | Proposed |
+| [0016](0016-hyper-on-tokio-and-own-framed-protocol.md) | hyper directly on tokio for HTTP; our own framed protocol between edges | Proposed (links between edges superseded by ADR-0023) |
 | [0017](0017-core-pairing-and-passkeys.md) | The Core stays inactive until paired with a phone; the owner credential is a passkey | Proposed |
 | [0018](0018-network-containment-through-the-firewall.md) | Network containment through the firewall (OpenWrt and MikroTik first, Cisco next) | Proposed |
 | [0019](0019-post-quantum-signatures-on-heads.md) | Hybrid post-quantum signatures on chain heads | Proposed |
 | [0020](0020-integrations-firewalls-and-event-sinks.md) | Integrations: firewall adapters and event sinks, starting with Kafka | Proposed |
 | [0021](0021-daemon-attestation-heartbeat-and-kernel-sensors.md) | Daemon attestation, challenge-response heartbeat and kernel sensors | Proposed |
 | [0022](0022-decision-policy-severities-and-defaults.md) | Decision policy: severities, outcomes and defaults | Proposed |
+| [0023](0023-quic-with-mutual-tls-between-edges.md) | QUIC with mutual TLS bound to identities between our edges | Proposed |
+| [0024](0024-discovery-and-activation-wizard.md) | Discovery on the local network and an activation wizard | Proposed |
 
 ## Open questions
 
