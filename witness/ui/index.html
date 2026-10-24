@@ -1,75 +1,145 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Witness</title>
+  <title>HAWK witness</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header>
-    <div class="brand">HAWK <span class="muted">witness</span></div>
-    <div id="state" class="pill pill-unknown">connecting</div>
-    <form id="connect">
-      <input id="core-url" value="http://127.0.0.1:8080" spellcheck="false" aria-label="Core address">
-      <button type="submit">Connect</button>
-    </form>
-  </header>
-
-  <main>
-    <section id="pairing" hidden>
-      <h2>Pair this Core</h2>
-      <p class="muted">The Core does nothing until it is paired with this app. After pairing, check that the same six digits appear in the Core's log.</p>
-      <button id="pair">Pair now</button>
-      <p id="pair-result"></p>
-    </section>
-
-    <section id="banner" class="banner" hidden></section>
-
-    <section class="tiles">
-      <div class="tile"><span class="label">Decided</span><span class="value" id="t-total">0</span></div>
-      <div class="tile ok"><span class="label">Allowed</span><span class="value" id="t-allow">0</span></div>
-      <div class="tile bad"><span class="label">Denied</span><span class="value" id="t-deny">0</span></div>
-      <div class="tile warn"><span class="label">Asked</span><span class="value" id="t-ask">0</span></div>
-      <div class="tile bad"><span class="label">Contained</span><span class="value" id="t-contained">0</span></div>
-      <div class="tile" id="tile-heads"><span class="label">Signed heads</span><span class="value" id="t-heads">0</span><span class="sub" id="t-heads-sub"></span></div>
-    </section>
-
-    <section class="panel">
-      <h2>Decisions per minute <span class="muted">last 30 min</span></h2>
-      <svg id="chart" viewBox="0 0 600 140" preserveAspectRatio="none" role="img" aria-label="Decisions per minute"></svg>
-      <div class="legend"><span class="dot ok"></span>allow <span class="dot bad"></span>deny <span class="dot warn"></span>ask</div>
-    </section>
-
-    <section class="panel">
-      <h2>Top rules</h2>
-      <ul id="rules" class="bars"></ul>
-    </section>
-
-    <section class="panel wide">
-      <h2>Events</h2>
-      <div class="filters">
-        <select id="f-decision" aria-label="Decision">
-          <option value="">all decisions</option>
-          <option>allow</option><option>deny</option><option>ask</option>
-        </select>
-        <select id="f-severity" aria-label="Severity">
-          <option value="">all severities</option>
-          <option>critical</option><option>high</option><option>medium</option><option>low</option>
-        </select>
-        <input id="f-text" placeholder="filter host, session, tool, rule" spellcheck="false">
+  <div class="app">
+    <aside class="nav" aria-label="Sections">
+      <div class="logo" aria-label="HAWK">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13l6-2 3-7 3 7 6 2-6 2-3 6-3-6z"/></svg>
+        <span>HAWK</span>
       </div>
-      <table>
-        <thead><tr><th>Time</th><th>#</th><th>Kind</th><th>Host</th><th>Tool</th><th>Decision</th><th>Severity</th><th>Rule</th></tr></thead>
-        <tbody id="events"></tbody>
-      </table>
-    </section>
+      <a href="#overview" class="active">Overview</a>
+      <a href="#hosts">Hosts</a>
+      <a href="#events">Events</a>
+      <a href="#integrity">Integrity</a>
+      <div class="nav-foot">
+        <button id="theme" class="ghost" type="button" aria-label="Toggle theme">Light theme</button>
+        <span class="muted" id="version"></span>
+      </div>
+    </aside>
 
-    <section class="panel wide">
-      <h2>Signed heads <span class="muted">checked against the key pinned at pairing</span></h2>
-      <ul id="heads" class="heads"></ul>
-    </section>
-  </main>
+    <div class="main">
+      <header class="topbar">
+        <div class="core-state" id="state" role="status">
+          <span class="status-icon" aria-hidden="true">•</span><span class="status-text">Connecting</span>
+        </div>
+        <form id="connect" class="core-form">
+          <label for="core-url" class="muted">Core</label>
+          <input id="core-url" value="http://127.0.0.1:8080" spellcheck="false">
+          <button type="submit">Connect</button>
+        </form>
+      </header>
+
+      <div class="filters" role="toolbar" aria-label="Time range">
+        <span class="muted">Range</span>
+        <div class="segmented" id="range">
+          <button type="button" data-min="15">15m</button>
+          <button type="button" data-min="60" class="on">1h</button>
+          <button type="button" data-min="360">6h</button>
+          <button type="button" data-min="1440">24h</button>
+        </div>
+        <span class="muted updated" id="updated"></span>
+      </div>
+
+      <section id="banner" class="banner" role="alert" hidden></section>
+
+      <section id="pairing" class="card pairing" hidden>
+        <div>
+          <h2>Pair this Core</h2>
+          <p class="muted">A new Core denies every action until it is paired with this app. After pairing, check that the Core's log shows the same six digits.</p>
+        </div>
+        <div class="pair-actions">
+          <button id="pair" type="button">Pair now</button>
+          <div id="pair-result" class="code"></div>
+        </div>
+      </section>
+
+      <section id="overview" class="kpis" aria-label="Summary">
+        <div class="card kpi hero">
+          <span class="kpi-label">Blocked actions</span>
+          <span class="kpi-value" id="k-blocked">0</span>
+          <span class="kpi-sub" id="k-blocked-sub">in range</span>
+        </div>
+        <div class="card kpi"><span class="kpi-label">Decisions</span><span class="kpi-value" id="k-total">0</span><span class="kpi-sub" id="k-rate"></span></div>
+        <div class="card kpi"><span class="kpi-label">Asked the owner</span><span class="kpi-value" id="k-ask">0</span><span class="kpi-sub">waiting or answered</span></div>
+        <div class="card kpi"><span class="kpi-label">Hosts contained</span><span class="kpi-value" id="k-contained">0</span><span class="kpi-sub" id="k-contained-sub">at the firewall</span></div>
+        <div class="card kpi"><span class="kpi-label">Record integrity</span><span class="kpi-value" id="k-integrity">–</span><span class="kpi-sub" id="k-integrity-sub"></span></div>
+      </section>
+
+      <section class="grid">
+        <div class="card span-2">
+          <div class="card-head">
+            <h2>Decisions over time</h2>
+            <div class="legend" aria-label="Legend">
+              <span><i class="key allow"></i>Allowed</span>
+              <span><i class="key ask"></i>Asked</span>
+              <span><i class="key deny"></i>Denied</span>
+            </div>
+            <button class="ghost small" id="chart-table-toggle" type="button">Table</button>
+          </div>
+          <div class="chart" id="chart-wrap">
+            <svg id="chart" role="img" aria-label="Decisions per interval, stacked by outcome"></svg>
+            <div class="tooltip" id="tooltip" hidden></div>
+          </div>
+          <table class="data chart-table" id="chart-table" hidden>
+            <thead><tr><th>From</th><th class="num">Allowed</th><th class="num">Asked</th><th class="num">Denied</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h2>Top rules</h2></div>
+          <ul class="rank" id="rules"></ul>
+        </div>
+
+        <div class="card" id="hosts">
+          <div class="card-head"><h2>Hosts</h2></div>
+          <ul class="hosts" id="host-list"></ul>
+        </div>
+      </section>
+
+      <section class="card" id="events">
+        <div class="card-head">
+          <h2>Events</h2>
+          <div class="event-filters">
+            <select id="f-outcome" aria-label="Outcome">
+              <option value="">All outcomes</option>
+              <option value="allow">Allowed</option>
+              <option value="ask">Asked</option>
+              <option value="deny">Denied</option>
+              <option value="containment">Containment</option>
+            </select>
+            <select id="f-severity" aria-label="Severity">
+              <option value="">All severities</option>
+              <option>critical</option><option>high</option><option>medium</option><option>low</option>
+            </select>
+            <input id="f-text" placeholder="Search host, session, tool, rule" spellcheck="false" aria-label="Search">
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data">
+            <thead><tr><th>Time</th><th class="num">#</th><th>Outcome</th><th>Severity</th><th>Host</th><th>Tool</th><th>Rule</th></tr></thead>
+            <tbody id="event-rows"></tbody>
+          </table>
+        </div>
+        <p class="muted empty" id="events-empty" hidden>No events in this range.</p>
+      </section>
+
+      <section class="card" id="integrity">
+        <div class="card-head">
+          <h2>Signed heads</h2>
+          <span class="muted">Ed25519 + ML-DSA-65, checked against the identity pinned at pairing</span>
+        </div>
+        <div class="identity" id="identity"></div>
+        <ol class="heads" id="heads"></ol>
+      </section>
+    </div>
+  </div>
   <script src="app.js"></script>
 </body>
 </html>

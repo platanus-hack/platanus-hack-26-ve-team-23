@@ -44,8 +44,9 @@ Styled like an observability dashboard (Datadog-like), see ADR-0013:
 
 ## Preview
 
-Open `preview/index.html` in a browser to see the dashboard with sample data;
-no Core or Tauri needed.
+Open `ui/index.html` directly in a browser: outside Tauri it loads
+`ui/preview.js` with sample data, so the design can be reviewed without a Core.
+Inside the app that file is never loaded.
 
 ## Layout
 

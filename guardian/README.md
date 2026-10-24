@@ -5,9 +5,10 @@ The daemon on the Raspberry Pi. Wires `detect`, `llm-proxy` and
 
 - **Runs on:** Raspberry Pi, 2 GB of RAM, Linux (arm64). In Docker, limited
   to 2 GB to match.
-- **Status:** `GET /health` and `POST /decide` implemented; `/decide` always
-  denies until the rules exist. Proxy, cross-check, chain store and delivery
-  to the witness planned.
+- **Status:** pairing, sealed and chained record with signed heads, witness
+  endpoints, decisions through the rule engine and policy, containment on the
+  firewall and publishing to sinks. Concrete rules, host heartbeats, the LLM
+  proxy and the cross-check are pending (`PENDIENTES.md`).
 
 ## Endpoints
 
