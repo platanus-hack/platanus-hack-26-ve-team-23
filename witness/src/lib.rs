@@ -18,6 +18,10 @@ pub fn run() {
             commands::pair_core,
             commands::configure_core,
             commands::identify_host,
+            commands::release_host,
+            commands::answer_ask,
+            commands::approve_host,
+            commands::open_record,
             commands::forget_core,
             commands::dashboard
         ])

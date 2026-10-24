@@ -17,6 +17,7 @@
       <a href="#hosts">Hosts</a>
       <a href="#events">Events</a>
       <a href="#integrity">Integrity</a>
+      <a href="#record">Record</a>
       <div class="nav-foot">
         <button id="theme" class="ghost" type="button" aria-label="Toggle theme">Light theme</button>
         <span class="muted" id="version"></span>
@@ -59,6 +60,14 @@
         <div class="card kpi"><span class="kpi-label">Asked the owner</span><span class="kpi-value" id="k-ask">0</span><span class="kpi-sub">waiting or answered</span></div>
         <div class="card kpi"><span class="kpi-label">Hosts contained</span><span class="kpi-value" id="k-contained">0</span><span class="kpi-sub" id="k-contained-sub">at the firewall</span></div>
         <div class="card kpi"><span class="kpi-label">Record integrity</span><span class="kpi-value" id="k-integrity">–</span><span class="kpi-sub" id="k-integrity-sub"></span></div>
+      </section>
+
+      <section class="card" id="asks" hidden>
+        <div class="card-head">
+          <h2>Waiting for your answer</h2>
+          <span class="muted">The agent is paused until you allow or deny</span>
+        </div>
+        <ul class="asks" id="ask-list"></ul>
       </section>
 
       <section class="grid">
@@ -127,6 +136,18 @@
         </div>
         <div class="identity" id="identity"></div>
         <ol class="heads" id="heads"></ol>
+      </section>
+
+      <section class="card" id="record">
+        <div class="card-head">
+          <h2>Record</h2>
+          <span class="muted">Decrypted with the epoch key on this device; the Core cannot read it</span>
+        </div>
+        <div class="record-bar">
+          <button id="open-record" type="button">Open the record</button>
+          <span class="muted" id="record-status"></span>
+        </div>
+        <ol class="record" id="record-list"></ol>
       </section>
     </div>
   </div>

@@ -4,14 +4,28 @@
 use std::{convert::Infallible, error::Error as StdError, future::Future, time::Duration};
 
 use bytes::Bytes;
-use http_body_util::{BodyExt, Full, Limited};
-use hyper::{header, server::conn::http1, service::service_fn, Request, Response, StatusCode};
+use http_body_util::{combinators::BoxBody as HttpBoxBody, BodyExt, Full, Limited};
+use hyper::{
+    body::Body as HttpBody, header, server::conn::http1, service::service_fn, Request, Response,
+    StatusCode,
+};
 use hyper_util::rt::{TokioIo, TokioTimer};
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::net::TcpListener;
 
-/// Response body used by every handler.
+/// Response body used by the simple handlers.
 pub type Body = Full<Bytes>;
+
+/// A boxed response body over bytes, so one handler can return buffered and
+/// streaming bodies alike (the proxy streams, the rest buffer).
+pub type BoxBody = HttpBoxBody<Bytes, Box<dyn StdError + Send + Sync>>;
+
+/// Boxes a buffered `Response<Body>` into a `Response<BoxBody>`.
+pub fn boxed(response: Response<Body>) -> Response<BoxBody> {
+    response.map(|body| {
+        BoxBody::new(body.map_err(|err| -> Box<dyn StdError + Send + Sync> { match err {} }))
+    })
+}
 
 /// HTTP client used between edges (host daemon to Core).
 pub type Client = hyper_util::client::legacy::Client<
@@ -118,11 +132,14 @@ pub fn peer<B>(req: &Request<B>) -> Option<std::net::SocketAddr> {
 
 /// Accepts connections forever, serving each on its own task. Accept errors
 /// (for example, out of file descriptors) are logged and retried after a
-/// short pause instead of stopping the server.
-pub async fn serve<H, F>(listener: TcpListener, handler: H)
+/// short pause instead of stopping the server. The handler may return any
+/// byte body (buffered or streaming).
+pub async fn serve<H, F, B>(listener: TcpListener, handler: H)
 where
     H: Fn(Request<hyper::body::Incoming>) -> F + Clone + Send + Sync + 'static,
-    F: Future<Output = Response<Body>> + Send + 'static,
+    F: Future<Output = Response<B>> + Send + 'static,
+    B: HttpBody<Data = Bytes> + Send + 'static,
+    B::Error: Into<Box<dyn StdError + Send + Sync>>,
 {
     loop {
         let (stream, peer) = match listener.accept().await {

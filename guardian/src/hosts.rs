@@ -22,6 +22,7 @@ struct Entry {
     hostname: String,
     os: String,
     last_seen_ms: u64,
+    boot_digest: Option<[u8; 32]>,
 }
 
 #[derive(Debug, Default)]
@@ -47,6 +48,7 @@ impl Hosts {
                 hostname: String::new(),
                 os: String::new(),
                 last_seen_ms: 0,
+                boot_digest: None,
             });
             entry.conn = Some(conn);
             entry.address = address;
@@ -54,14 +56,21 @@ impl Hosts {
         }
     }
 
-    pub fn hello(&self, peer: PeerId, hostname: &str, os: &str) {
+    pub fn hello(&self, peer: PeerId, hostname: &str, os: &str, boot_digest: Option<[u8; 32]>) {
         if let Ok(mut entries) = self.entries.lock() {
             if let Some(entry) = entries.get_mut(&peer) {
                 entry.hostname = hostname.chars().take(64).collect();
                 entry.os = os.chars().take(32).collect();
+                entry.boot_digest = boot_digest;
                 entry.last_seen_ms = now_ms();
             }
         }
+    }
+
+    /// The boot measurement the host reported at hello (ADR-0021).
+    pub fn boot_digest(&self, peer: &PeerId) -> Option<[u8; 32]> {
+        let entries = self.entries.lock().ok()?;
+        entries.get(peer)?.boot_digest
     }
 
     pub fn seen(&self, peer: &PeerId) {
@@ -88,10 +97,33 @@ impl Hosts {
                 os: e.os.clone(),
                 connected: e.conn.as_ref().is_some_and(|c| c.close_reason().is_none()),
                 last_seen_ms: e.last_seen_ms,
+                approved: false,
             })
             .collect();
         hosts.sort_by(|a, b| a.hostname.cmp(&b.hostname));
         hosts
+    }
+
+    /// Live connections of hosts that introduced themselves, for the
+    /// heartbeat round (ADR-0021).
+    pub fn connections(&self) -> Vec<(PeerId, Connection)> {
+        let entries = self.entries.lock().unwrap_or_else(|p| p.into_inner());
+        entries
+            .iter()
+            .filter(|(_, e)| !e.hostname.is_empty())
+            .filter_map(|(id, e)| {
+                e.conn
+                    .as_ref()
+                    .filter(|c| c.close_reason().is_none())
+                    .map(|c| (*id, c.clone()))
+            })
+            .collect()
+    }
+
+    /// The address the Core would quarantine for a host (ADR-0018).
+    pub fn address(&self, peer: &PeerId) -> Option<std::net::IpAddr> {
+        let entries = self.entries.lock().ok()?;
+        entries.get(peer)?.address.parse().ok()
     }
 
     /// Asks the host to show its identification notice.

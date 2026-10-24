@@ -214,6 +214,24 @@ table.data tbody tr:hover td { background: var(--surface-2); }
 .heads code { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, "Cascadia Code", monospace; }
 .heads time { color: var(--muted); font-variant-numeric: tabular-nums; }
 
+/* Record --------------------------------------------------------------------- */
+.record-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.record { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow: auto; font-size: 12px; }
+.record > li { padding: 10px 4px; border-bottom: 1px solid var(--grid); }
+.record-head { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+.record-head .seq { color: var(--muted); font-variant-numeric: tabular-nums; }
+.record-head time { color: var(--muted); font-variant-numeric: tabular-nums; margin-left: auto; }
+.record pre { margin: 0; padding: 8px; background: var(--surface-2); border-radius: 6px; overflow: auto; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 11px; color: var(--ink-2); }
+
+/* Asks ----------------------------------------------------------------------- */
+.asks { list-style: none; margin: 0; padding: 0; }
+.asks li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 4px; border-bottom: 1px solid var(--grid); }
+.ask-head { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ask-head .tool { font-weight: 600; }
+.ask-head .reason { color: var(--ink-2); }
+.ask-head time { color: var(--muted); font-size: 11px; }
+.ask-actions { display: flex; gap: 8px; }
+
 @media (forced-colors: active) {
   .chip::before, .key, .status-icon { forced-color-adjust: none; }
 }

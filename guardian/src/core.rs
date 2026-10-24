@@ -326,6 +326,45 @@ impl Core {
             .unwrap_or(false)
     }
 
+    /// The host identities the owner has enrolled, hex, as stored in
+    /// `approved.json` (ADR-0021).
+    pub fn approved_hosts(&self) -> Vec<String> {
+        fs::read(self.dir.join("approved.json"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default()
+    }
+
+    /// Enrols a host daemon by its Ed25519 identity (hex). Idempotent.
+    pub fn approve_host(&self, id: &str) -> Result<(), CoreError> {
+        let mut hosts = self.approved_hosts();
+        if !hosts.iter().any(|h| h == id) {
+            hosts.push(id.to_owned());
+        }
+        write_private(
+            &self.dir.join("approved.json"),
+            &serde_json::to_vec_pretty(&hosts).map_err(|_| CoreError::Corrupt("approved.json"))?,
+        )?;
+        Ok(())
+    }
+
+    /// Whether a host identity is enrolled.
+    pub fn is_approved_host(&self, id: &[u8; 32]) -> bool {
+        let hex_id = hex::encode(id);
+        self.approved_hosts().iter().any(|h| h == &hex_id)
+    }
+
+    /// Whether a hex host identity is enrolled.
+    pub fn is_approved_host_hex(&self, id_hex: &str) -> bool {
+        let Some(id) = hex::decode(id_hex)
+            .ok()
+            .and_then(|b| <[u8; 32]>::try_from(b).ok())
+        else {
+            return false;
+        };
+        self.is_approved_host(&id)
+    }
+
     pub fn pair_offer(&self) -> Result<PairOffer, CoreError> {
         match &self.lock()?.pairing {
             Pairing::Unpaired { nonce } => Ok(PairOffer {
@@ -558,6 +597,29 @@ impl Core {
             .filter(|e| since.is_none_or(|s| e.seq > s))
             .cloned()
             .collect())
+    }
+
+    /// The sealed events of `[from_seq, to_seq]`, oldest first, re-read from
+    /// `events.bin`. Payloads stay sealed: the Core cannot read them
+    /// (ADR-0007).
+    pub fn events_range(&self, from_seq: u64, to_seq: u64) -> Result<Vec<Event>, CoreError> {
+        let _guard = self.lock()?;
+        let path = self.dir.join("events.bin");
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        let bytes = fs::read(path)?;
+        let mut offset = 0;
+        let mut out = Vec::new();
+        while offset < bytes.len() {
+            let (event, used) =
+                Event::decode(&bytes[offset..]).ok_or(CoreError::Corrupt("events.bin"))?;
+            if event.seq >= from_seq && event.seq <= to_seq {
+                out.push(event);
+            }
+            offset += used;
+        }
+        Ok(out)
     }
 }
 

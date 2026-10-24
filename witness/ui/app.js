@@ -18,6 +18,7 @@ let refreshTimer = null;
 let rangeMin = Number(localStorage.getItem("rangeMin") || 60);
 let data = null;
 let inFlight = false;
+let lastAlertSeq = 0;
 
 // Helpers ---------------------------------------------------------------------
 
@@ -101,8 +102,10 @@ function render() {
   renderChart(decisions);
   renderRules(decisions);
   renderHosts(d.hosts || [], events);
+  renderAsks(d.asks || []);
   renderEvents(events);
   renderIntegrity(d);
+  noticeNewAlerts(events);
 }
 
 function renderKpis(decisions, containments, d) {
@@ -264,6 +267,7 @@ function renderHosts(hosts, events) {
     if (e.kind === "decision") a.calls += 1;
     if (e.decision === "deny") a.denied += 1;
     if (e.kind === "containment") a.contained = true;
+    if (e.kind === "release") a.contained = false;
     activity.set(e.host, a);
   }
   const connected = hosts.filter((h) => h.connected).length;
@@ -277,6 +281,7 @@ function renderHosts(hosts, events) {
     const li = el("li", undefined, "host");
     let state;
     if (a.contained) state = el("span", "Contained", "chip contained");
+    else if (!h.approved) state = el("span", "Pending", "chip ask");
     else if (h.connected) state = el("span", "Connected", "chip allow");
     else state = el("span", "Offline", "chip neutral");
     const identify = el("button", "Identify", "ghost small");
@@ -300,6 +305,50 @@ function renderHosts(hosts, events) {
     });
     const actions = el("div", undefined, "host-actions");
     actions.append(state, identify);
+    if (!h.approved && h.connected) {
+      const approve = el("button", "Approve", "ghost small");
+      approve.type = "button";
+      approve.title = "Enrol this host so its tools can run (owner signature)";
+      approve.addEventListener("click", async () => {
+        approve.disabled = true;
+        try {
+          await invoke("approve_host", { host: h.id });
+          approve.textContent = "Approved";
+          await refresh();
+        } catch (err) {
+          approve.textContent = "Failed";
+          showBanner(String(err));
+        } finally {
+          setTimeout(() => {
+            approve.textContent = "Approve";
+            approve.disabled = false;
+          }, 4000);
+        }
+      });
+      actions.append(approve);
+    }
+    if (a.contained) {
+      const release = el("button", "Release", "ghost small");
+      release.type = "button";
+      release.title = "Lift this host's quarantine (owner signature)";
+      release.addEventListener("click", async () => {
+        release.disabled = true;
+        try {
+          await invoke("release_host", { host: h.address });
+          release.textContent = "Released";
+          await refresh();
+        } catch (err) {
+          release.textContent = "Failed";
+          showBanner(String(err));
+        } finally {
+          setTimeout(() => {
+            release.textContent = "Release";
+            release.disabled = false;
+          }, 4000);
+        }
+      });
+      actions.append(release);
+    }
     const name = el("div");
     name.append(el("span", h.hostname || h.address, "addr"), document.createTextNode(" "), el("code", h.fingerprint, "fp"));
     li.append(
@@ -308,6 +357,56 @@ function renderHosts(hosts, events) {
       el("span", `${h.address} · ${h.os} · ${a.calls} calls · ${a.denied} denied · seen ${timeFmt(h.last_seen_ms)}`, "meta"),
     );
     list.appendChild(li);
+  }
+}
+
+function renderAsks(asks) {
+  const section = $("asks");
+  const list = $("ask-list");
+  section.hidden = !asks.length;
+  list.replaceChildren();
+  for (const ask of asks) {
+    const li = el("li");
+    const head = el("div", undefined, "ask-head");
+    head.append(
+      el("span", ask.tool, "tool"),
+      el("span", ask.reason, "reason"),
+      el("time", timeFmt(ask.created_at_ms, true)),
+    );
+    const actions = el("div", undefined, "ask-actions");
+    const allow = el("button", "Allow");
+    const deny = el("button", "Deny", "ghost");
+    allow.type = "button";
+    deny.type = "button";
+    const answer = async (value) => {
+      allow.disabled = true;
+      deny.disabled = true;
+      try {
+        await invoke("answer_ask", { id: ask.id, allow: value });
+        await refresh();
+      } catch (err) {
+        showBanner(String(err));
+      }
+    };
+    allow.addEventListener("click", () => answer(true));
+    deny.addEventListener("click", () => answer(false));
+    actions.append(allow, deny);
+    li.append(head, actions);
+    list.appendChild(li);
+  }
+}
+
+function noticeNewAlerts(events) {
+  const alerts = events.filter((e) => e.kind === "alert");
+  if (!alerts.length) return;
+  const latest = alerts[alerts.length - 1].seq;
+  if (latest > lastAlertSeq) {
+    lastAlertSeq = latest;
+    const reason = alerts[alerts.length - 1].reason || "critical finding";
+    showBanner(`Alert: ${reason}`);
+    setTimeout(() => {
+      if (lastAlertSeq === latest) showBanner("");
+    }, 6000);
   }
 }
 
@@ -373,6 +472,42 @@ function renderIntegrity(d) {
 
 // Data -------------------------------------------------------------------------
 
+async function openRecord() {
+  const button = $("open-record");
+  const status = $("record-status");
+  const list = $("record-list");
+  button.disabled = true;
+  status.textContent = "Opening…";
+  list.replaceChildren();
+  try {
+    const record = await invoke("open_record");
+    status.textContent = record.verified
+      ? `Verified · ${record.events.length} event(s)`
+      : "Chain verification failed";
+    if (!record.events.length) {
+      list.appendChild(el("li", "The record is empty.", "muted"));
+    }
+    for (const e of record.events) {
+      const li = el("li");
+      const head = el("div", undefined, "record-head");
+      head.append(
+        el("span", `#${e.seq}`, "seq"),
+        el("span", e.kind, "chip neutral"),
+        el("time", timeFmt(e.timestamp_ms, true)),
+      );
+      const body = el("pre");
+      body.textContent = e.content == null ? "(could not decrypt)" : JSON.stringify(e.content, null, 2);
+      li.append(head, body);
+      list.appendChild(li);
+    }
+  } catch (err) {
+    status.textContent = "Failed";
+    showBanner(String(err));
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function refresh() {
   if (inFlight) return;
   inFlight = true;
@@ -430,6 +565,7 @@ function wire() {
     await invoke("forget_core");
     openWizard();
   });
+  $("open-record").addEventListener("click", openRecord);
   wireWizard();
 
   for (const id of ["f-outcome", "f-severity"]) $(id).addEventListener("change", render);

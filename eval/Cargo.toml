@@ -4,11 +4,16 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 publish.workspace = true
-description = "Evaluation runner and metrics; trains the classifier."
+description = "Evaluation set, runner and metrics (ADR-0010)."
 
 [dependencies]
 guardian-core.workspace = true
 detect.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [lints]
 workspace = true

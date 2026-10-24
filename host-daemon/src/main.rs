@@ -15,7 +15,11 @@
 
 #![forbid(unsafe_code)]
 
+mod heartbeat;
 mod notice;
+mod tpm;
+
+use heartbeat::Heartbeat;
 
 use std::{
     error::Error as StdError,
@@ -31,14 +35,15 @@ use bytes::Bytes;
 use ed25519_dalek::SigningKey;
 use edge_net::{
     discovery,
-    http::{json, read_json, text, Body},
+    http::{boxed, json, read_json, text, BoxBody},
     quic::{self, PeerId},
 };
 use guardian_core::{
-    wire::{Request as Wire, Response as WireResponse},
+    wire::{ProxyRecord, Request as Wire, Response as WireResponse},
     Decision, ToolCall,
 };
 use hyper::{Method, Request, Response, StatusCode};
+use llm_proxy::{Proxy, ProxyConfig, RecordSink};
 use quinn::Connection;
 use rand::rngs::OsRng;
 use tokio::{net::TcpListener, sync::Mutex};
@@ -78,6 +83,7 @@ impl std::fmt::Debug for Link {
 #[derive(Debug, Clone)]
 struct Relay {
     link: Arc<Link>,
+    heartbeat: Arc<Heartbeat>,
 }
 
 fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
@@ -125,6 +131,8 @@ impl Relay {
         locator: Locator,
         pin: Option<PeerId>,
         pin_file: Option<PathBuf>,
+        counter_file: Option<PathBuf>,
+        boot: Option<[u8; 32]>,
     ) -> Result<Self, String> {
         let identity = quic::TlsIdentity::from_signing_key(key, "hawk-host")?;
         let pinned = pin.or_else(|| {
@@ -142,6 +150,7 @@ impl Relay {
                 pinned: Mutex::new(pinned),
                 conn: Mutex::new(None),
             }),
+            heartbeat: Arc::new(Heartbeat::new(key.clone(), counter_file, boot)),
         })
     }
 
@@ -197,39 +206,58 @@ impl Relay {
         let hello = Wire::HostHello {
             hostname: hostname(),
             os: std::env::consts::OS.to_owned(),
+            boot_digest: self.heartbeat.boot().map(hex::encode),
         };
         if let Err(err) =
             quic::request::<_, WireResponse>(conn, &hello, Duration::from_secs(5)).await
         {
             tracing::warn!(%err, "core did not take the host hello");
         }
+        let heartbeat = Arc::clone(&self.heartbeat);
         tokio::spawn(quic::serve_connection(
             conn.clone(),
             core,
-            |_peer, _addr, req: Wire| async move {
-                match req {
-                    Wire::IdentifySelf {
-                        core_name,
-                        fingerprint,
-                    } => {
-                        let text = notice::message(&core_name, &fingerprint, &hostname());
-                        let shown = tokio::task::spawn_blocking(move || notice::show(&text))
-                            .await
-                            .unwrap_or(false);
-                        if !shown {
-                            tracing::warn!(
-                                "no desktop notifier accepted the notice; it is in the log"
-                            );
+            move |_peer, _addr, req: Wire| {
+                let heartbeat = Arc::clone(&heartbeat);
+                async move {
+                    match req {
+                        Wire::IdentifySelf {
+                            core_name,
+                            fingerprint,
+                        } => {
+                            let text = notice::message(&core_name, &fingerprint, &hostname());
+                            let shown = tokio::task::spawn_blocking(move || notice::show(&text))
+                                .await
+                                .unwrap_or(false);
+                            if !shown {
+                                tracing::warn!(
+                                    "no desktop notifier accepted the notice; it is in the log"
+                                );
+                            }
+                            WireResponse::Ack
                         }
-                        WireResponse::Ack
+                        Wire::HeartbeatChallenge { nonce } => {
+                            let nonce = hex::decode(&nonce).unwrap_or_default();
+                            let (counter, digest, signature, boot) = heartbeat.beat(&nonce);
+                            WireResponse::Heartbeat {
+                                nonce: hex::encode(nonce),
+                                counter,
+                                digest: hex::encode(digest),
+                                signature,
+                                boot: boot.map(hex::encode),
+                            }
+                        }
+                        _ => WireResponse::error("a host daemon only answers identification"),
                     }
-                    _ => WireResponse::error("a host daemon only answers identification"),
                 }
             },
         ));
     }
 
     async fn decide(&self, call: &ToolCall) -> Decision {
+        // The heartbeat carries the hash of what this daemon observed, so the
+        // Core can compare it with the hook and proxy reports (ADR-0021).
+        self.heartbeat.note_call(call.digest());
         // One retry with a fresh connection if the cached one went stale.
         for attempt in 0..2 {
             let conn = match self.connection().await {
@@ -257,16 +285,47 @@ impl Relay {
         }
         Decision::deny("core unreachable")
     }
+
+    /// A `RecordSink` the proxy calls after each response: relays the copy to
+    /// the Core over QUIC. Fire-and-forget so a slow Core never blocks the
+    /// agent's answer; failures are logged and the Core records nothing.
+    fn proxy_sink(&self) -> RecordSink {
+        let relay = self.clone();
+        Arc::new(move |record| {
+            let relay = relay.clone();
+            tokio::spawn(async move {
+                if let Err(err) = relay.send_proxy_record(record).await {
+                    tracing::warn!(%err, "could not relay the proxy record to the core");
+                }
+            });
+        })
+    }
+
+    async fn send_proxy_record(&self, record: ProxyRecord) -> Result<(), String> {
+        let conn = self.connection().await?;
+        match quic::request::<_, WireResponse>(
+            &conn,
+            &Wire::ProxyRecord { record },
+            Duration::from_secs(5),
+        )
+        .await?
+        {
+            WireResponse::Ack => Ok(()),
+            other => Err(format!("unexpected answer from the core: {other:?}")),
+        }
+    }
 }
 
-async fn handle<B>(relay: Relay, req: Request<B>) -> Response<Body>
+async fn handle<B>(relay: Relay, proxy: Arc<Proxy>, req: Request<B>) -> Response<BoxBody>
 where
-    B: hyper::body::Body<Data = Bytes>,
+    B: hyper::body::Body<Data = Bytes> + Send + 'static,
     B::Error: Into<Box<dyn StdError + Send + Sync>>,
 {
-    match (req.method(), req.uri().path()) {
-        (&Method::GET, "/health") => text(StatusCode::OK, "ok"),
-        (&Method::POST, "/decide") => {
+    let method = req.method().clone();
+    let path = req.uri().path().to_owned();
+    match (method, path.as_str()) {
+        (Method::GET, "/health") => boxed(text(StatusCode::OK, "ok")),
+        (Method::POST, "/decide") => {
             let decision = match read_json::<ToolCall, _>(req, MAX_BODY_BYTES).await {
                 Ok(call) => {
                     let decision = relay.decide(&call).await;
@@ -275,9 +334,16 @@ where
                 }
                 Err(_) => Decision::deny("malformed tool call"),
             };
-            json(StatusCode::OK, &decision)
+            boxed(json(StatusCode::OK, &decision))
         }
-        _ => text(StatusCode::NOT_FOUND, "not found"),
+        _ if Proxy::accepts(&path) => match proxy.forward(req, relay.proxy_sink()).await {
+            Ok(response) => response,
+            Err(err) => {
+                tracing::warn!(%err, "proxy forwarding failed");
+                boxed(text(StatusCode::BAD_GATEWAY, "bad gateway"))
+            }
+        },
+        _ => boxed(text(StatusCode::NOT_FOUND, "not found")),
     }
 }
 
@@ -305,7 +371,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok()
         .as_deref()
         .and_then(hex32);
-    let relay = Relay::new(&key, locator, pin, Some(dir.join("core.pin")))?;
+    let boot = tpm::boot_digest();
+    if boot.is_some() {
+        tracing::info!("TPM boot measurement available");
+    }
+    let relay = Relay::new(
+        &key,
+        locator,
+        pin,
+        Some(dir.join("core.pin")),
+        Some(dir.join("heartbeat.counter")),
+        boot,
+    )?;
+    let upstream = std::env::var("OLLAMA_URL").unwrap_or_else(|_| "http://127.0.0.1:11434".into());
+    let proxy = Arc::new(Proxy::new(
+        ProxyConfig {
+            upstream: upstream.clone(),
+        },
+        Duration::from_secs(5),
+    ));
     tracing::warn!(
         fingerprint = %quic::fingerprint(&key.verifying_key().to_bytes()),
         hostname = %hostname(),
@@ -313,8 +397,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let listener = TcpListener::bind(addr).await?;
-    tracing::info!(%addr, "host daemon listening on loopback");
-    edge_net::http::serve(listener, move |req| handle(relay.clone(), req)).await;
+    tracing::info!(%addr, %upstream, "host daemon listening on loopback");
+    edge_net::http::serve(listener, move |req| {
+        handle(relay.clone(), proxy.clone(), req)
+    })
+    .await;
     Ok(())
 }
 
@@ -325,11 +412,21 @@ mod tests {
 
     const CALL: &[u8] = br#"{"session":"s","tool":"bash","args":{"command":"ls"},"cwd":"/w"}"#;
 
+    /// A proxy that never talks to a real upstream: only `/decide` is used.
+    fn dummy_proxy() -> Arc<Proxy> {
+        Arc::new(Proxy::new(
+            ProxyConfig {
+                upstream: "http://127.0.0.1:1".into(),
+            },
+            Duration::from_secs(1),
+        ))
+    }
+
     async fn ask(relay: Relay, body: &'static [u8]) -> Decision {
         let req = Request::post("/decide")
             .body(Full::new(Bytes::from_static(body)))
             .unwrap();
-        let bytes = handle(relay, req)
+        let bytes = handle(relay, dummy_proxy(), req)
             .await
             .into_body()
             .collect()
@@ -358,7 +455,15 @@ mod tests {
     }
 
     fn relay(locator: Locator, pin: Option<PeerId>) -> Relay {
-        Relay::new(&SigningKey::generate(&mut OsRng), locator, pin, None).unwrap()
+        Relay::new(
+            &SigningKey::generate(&mut OsRng),
+            locator,
+            pin,
+            None,
+            None,
+            None,
+        )
+        .unwrap()
     }
 
     #[tokio::test]

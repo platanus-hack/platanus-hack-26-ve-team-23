@@ -45,6 +45,8 @@ base64 = "0.22"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "tls12", "ring"] }
 rskafka = { version = "0.6", default-features = false }
+futures-util = "0.3"
+regex = "1"
 
 # Cryptography: established crates only, never our own primitives (ADR-0014).
 ed25519-dalek = { version = "2", features = ["pkcs8", "rand_core"] }

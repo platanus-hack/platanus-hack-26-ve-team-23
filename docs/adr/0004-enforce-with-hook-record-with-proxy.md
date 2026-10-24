@@ -98,4 +98,13 @@ There are two places to intercept a coding agent:
 
 ## History
 
+- v1.1 (2026-10-24): the proxy is OpenAI-compatible and lives in the host
+  daemon on loopback, because OpenCode only speaks HTTP (ADR-0023 left no
+  HTTP endpoint on the Core). The daemon forwards to Ollama and relays a copy
+  of each request and response to the Core over QUIC as
+  `Request::ProxyRecord`. The cross-check matches the model's tool-call id
+  against the hook's `ToolCall.call_id` (the plugin sends `input.callID`) in
+  a 5 s window (ADR-0022): a proposed call with no matching `decide` is a
+  critical evasion alert that quarantines the host; a `decide` with no
+  matching proposal is a high alert.
 - v1.0 (2026-10-24): Initial decision.
