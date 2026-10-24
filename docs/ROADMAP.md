@@ -21,7 +21,7 @@ What is missing and why: `PENDIENTES.md`.
 | M8 | Owner app (phone) | 0013, 0024, 0031 | Done: activation wizard, five screens (overview, machines, events, record, settings), Identify, Approve and Release, opening the sealed record, answering `ask` with alerts, Spanish and English, light and dark; reviewed in a browser against a mock shaped like the Rust structs; not yet run on a device; Android specifics pending |
 | M9 | Pairing | 0017 | Done with a P-256 owner key bound to the Core, nonce and app identity; passkeys pending |
 | M9b | Host identity and identify | 0015, 0021 | Done: fingerprint per host, identify notice, owner enrolment, heartbeat and dead man's switch; TPM key and boot quote pending (hardware) |
-| M10 | Classifier | 0005 | Pending |
+| M10 | Classifier | 0005, 0035 | Pipeline ready in `training/` (branch `entrenamiento`): dataset, linear baseline, Granite 4 ~800M with LoRA; pending labelled data, ADR-0035 approval and loading the model in the Core |
 | M11 | Results and demo | 0010 | Pending: needs M2, a real `eval` run against the Core, the demo router and the Pi |
 | M12 | Repository clean-up | – | In progress: documentation synced with the code |
 | M13 | Landing page and app redesign | 0013, 0031 | Done in the browser preview: new `witness/ui`, HAWK icons, landing in `misc/landing`; pending the Tauri build on device, publishing the landing and a release for `install.sh` |

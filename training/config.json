@@ -1,0 +1,10 @@
+{
+  "model": "CONFIRM: the Granite 4 model of about 800M parameters on huggingface.co/ibm-granite (check the card: parameters below 1.5B, licence Apache-2.0)",
+  "max_parameters": 1500000000,
+  "epochs": 3,
+  "learning_rate": 0.0002,
+  "batch_size": 8,
+  "gradient_accumulation_steps": 2,
+  "max_length": 1024,
+  "lora": { "r": 16, "alpha": 32, "dropout": 0.05, "target_modules": "all-linear" }
+}

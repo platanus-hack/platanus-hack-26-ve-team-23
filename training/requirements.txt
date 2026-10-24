@@ -1,0 +1,11 @@
+# Classifier training (ADR-0035). Install PyTorch for your CUDA first, from
+# https://pytorch.org/get-started/locally/ , then: pip install -r requirements.txt
+# Licences: PyTorch BSD-3-Clause; transformers, peft, trl, datasets,
+# accelerate Apache-2.0; scikit-learn BSD-3-Clause.
+torch>=2.4
+transformers>=4.46
+peft>=0.13
+trl>=0.20
+datasets>=3.0
+accelerate>=1.0
+scikit-learn>=1.5

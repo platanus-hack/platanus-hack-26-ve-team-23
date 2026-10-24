@@ -10,6 +10,14 @@ Every entry is written when the change is merged, under `Unreleased`.
 
 ### Added
 
+- `training/` and ADR-0035 (training data licences): the classifier
+  pipeline of M10. `prepare.py` builds the dataset from the rule catalogue's
+  examples and the team's JSONL files, refuses unlisted sources and splits
+  by family; `baseline_linear.py` (feature hashing and logistic regression)
+  is the baseline; `train_lora.py` measures Granite 4 (~800M, refused at
+  1.5B or more) with and without a LoRA fine-tune; `evaluate.py` reports
+  false alarms and misses per split.
+
 - ADR-0034 and Claude Code and Codex hooks: `hawk-host-daemon hook
   claude|codex` is their `PreToolUse` hook (normalises the call, asks the
   daemon, blocks on any failure), and `hooks install|uninstall|status` edits
