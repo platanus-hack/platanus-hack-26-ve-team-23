@@ -9,6 +9,40 @@ pub struct ToolCall {
     pub tool: String,
     pub args: serde_json::Value,
     pub cwd: String,
+    /// Set by the host daemon: which enrolled host relayed the call.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+    /// The model's tool call id, used to match hook requests with what the
+    /// proxy saw (ADR-0004).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub call_id: Option<String>,
+}
+
+impl ToolCall {
+    /// Order-independent fingerprint of a call, shared by the daemon and the
+    /// Core to compare what each saw between heartbeats (ADR-0021).
+    pub fn digest(&self) -> [u8; 32] {
+        use sha2::{Digest as _, Sha256};
+        let bytes = serde_json::to_vec(self).unwrap_or_default();
+        Sha256::new()
+            .chain_update(b"guardian.call.v1")
+            .chain_update(bytes)
+            .finalize()
+            .into()
+    }
+}
+
+/// Combines call digests regardless of the order they arrived in.
+pub fn digest_set(digests: &[[u8; 32]]) -> [u8; 32] {
+    use sha2::{Digest as _, Sha256};
+    let mut sorted = digests.to_vec();
+    sorted.sort_unstable();
+    let mut hasher = Sha256::new();
+    hasher.update(b"guardian.callset.v1");
+    for d in &sorted {
+        hasher.update(d);
+    }
+    hasher.finalize().into()
 }
 
 /// The Guardian's answer. Anything other than `Allow` stops the tool.

@@ -65,6 +65,8 @@ mod tests {
             tool: "bash".into(),
             args: serde_json::json!({ "command": command }),
             cwd: "/work".into(),
+            host: None,
+            call_id: None,
         }
     }
 

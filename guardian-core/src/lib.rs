@@ -18,4 +18,4 @@ pub use chain::{verify, ChainError, Digest, HashChain};
 pub use event::{Event, EventKind};
 pub use head::{HeadError, SignedHead};
 pub use keys::{CoreKeys, CorePublic};
-pub use types::{Decision, Finding, Severity, ToolCall};
+pub use types::{digest_set, Decision, Finding, Severity, ToolCall};

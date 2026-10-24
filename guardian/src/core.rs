@@ -111,6 +111,7 @@ pub struct EventMeta {
     pub rule: Option<String>,
     pub severity: Option<Severity>,
     pub reason: Option<String>,
+    pub host: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -370,7 +371,11 @@ impl Core {
 
     /// Records a decision. If the record cannot be written, the caller must
     /// deny: an action that cannot be recorded does not run.
-    pub fn record_decision(&self, call: &ToolCall, verdict: &Verdict) -> Result<(), CoreError> {
+    pub fn record_decision(
+        &self,
+        call: &ToolCall,
+        verdict: &Verdict,
+    ) -> Result<EventMeta, CoreError> {
         let mut inner = self.lock()?;
         let epoch = match &inner.pairing {
             Pairing::Paired(record) => hex32(&record.epoch_public, "epoch key")?,
@@ -399,6 +404,7 @@ impl Core {
             rule: top.map(|f| f.rule.clone()),
             severity: top.map(|f| f.severity),
             reason: top.map(|f| f.reason.clone()),
+            host: call.host.clone(),
             ..EventMeta::empty()
         };
         let urgent = top.is_some_and(|f| f.severity >= Severity::High);
@@ -421,7 +427,7 @@ impl Core {
         payload: &[u8],
         mut meta: EventMeta,
         urgent: bool,
-    ) -> Result<(), CoreError> {
+    ) -> Result<EventMeta, CoreError> {
         let event = Event {
             seq: inner.chain.next_seq(),
             timestamp_ms: now_ms(),
@@ -440,7 +446,7 @@ impl Core {
         if inner.recent.len() == RECENT_EVENTS {
             inner.recent.pop_front();
         }
-        inner.recent.push_back(meta);
+        inner.recent.push_back(meta.clone());
 
         inner.unsigned += 1;
         if urgent || inner.unsigned >= EVENTS_PER_HEAD {
@@ -455,7 +461,54 @@ impl Core {
             inner.heads.push(signed);
             inner.unsigned = 0;
         }
-        Ok(())
+        Ok(meta)
+    }
+
+    /// Records any other event (alerts, containment): `content` is sealed to
+    /// the epoch key like every payload, `meta` is what the dashboard and the
+    /// sinks see.
+    // Used by host management and containment (PENDIENTES.md).
+    #[allow(dead_code)]
+    pub fn record(
+        &self,
+        kind: EventKind,
+        meta: EventMeta,
+        content: &serde_json::Value,
+        urgent: bool,
+    ) -> Result<EventMeta, CoreError> {
+        let mut inner = self.lock()?;
+        let epoch = match &inner.pairing {
+            Pairing::Paired(record) => hex32(&record.epoch_public, "epoch key")?,
+            Pairing::Unpaired { .. } => return Err(CoreError::NotPaired),
+        };
+        let plaintext =
+            serde_json::to_vec(content).map_err(|_| CoreError::Corrupt("event encoding"))?;
+        let sealed = seal::seal(&epoch, &plaintext, &mut OsRng)
+            .map_err(|_| CoreError::Corrupt("sealing failed"))?;
+        Self::append(
+            &self.keys, &self.dir, &mut inner, kind, &sealed, meta, urgent,
+        )
+    }
+
+    /// Checks a signature by the paired owner (DER, hex) over `message`.
+    // Used by host management and containment (PENDIENTES.md).
+    #[allow(dead_code)]
+    pub fn verify_owner(&self, message: &[u8], signature_hex: &str) -> Result<(), CoreError> {
+        let inner = self.lock()?;
+        let Pairing::Paired(record) = &inner.pairing else {
+            return Err(CoreError::NotPaired);
+        };
+        let owner = hex::decode(&record.owner_public)
+            .ok()
+            .and_then(|b| VerifyingKey::from_sec1_bytes(&b).ok())
+            .ok_or(CoreError::Corrupt("owner key"))?;
+        let signature = hex::decode(signature_hex)
+            .ok()
+            .and_then(|der| Signature::from_der(&der).ok())
+            .ok_or(CoreError::BadPairing("signature not DER"))?;
+        owner
+            .verify(message, &signature)
+            .map_err(|_| CoreError::BadPairing("owner signature does not verify"))
     }
 
     pub fn status(&self) -> Result<Status, CoreError> {
@@ -492,7 +545,7 @@ impl Core {
 }
 
 impl EventMeta {
-    fn empty() -> Self {
+    pub fn empty() -> Self {
         Self {
             seq: 0,
             timestamp_ms: 0,
@@ -503,6 +556,7 @@ impl EventMeta {
             rule: None,
             severity: None,
             reason: None,
+            host: None,
         }
     }
 }
@@ -553,6 +607,8 @@ pub(crate) mod tests {
             tool: "bash".into(),
             args: serde_json::json!({ "command": "ls" }),
             cwd: "/w".into(),
+            host: None,
+            call_id: None,
         }
     }
 

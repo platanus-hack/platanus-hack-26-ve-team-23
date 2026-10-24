@@ -77,6 +77,17 @@ where
 /// A client that does not send its headers within this time is dropped.
 pub const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// The TCP peer of a request, added by `serve` to every request's
+/// extensions. Taken from the socket, so a client cannot claim another
+/// address.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PeerAddr(pub std::net::SocketAddr);
+
+/// The TCP peer of `req`, if it came through `serve`.
+pub fn peer<B>(req: &Request<B>) -> Option<std::net::SocketAddr> {
+    req.extensions().get::<PeerAddr>().map(|p| p.0)
+}
+
 /// Accepts connections forever, serving each on its own task. Accept errors
 /// (for example, out of file descriptors) are logged and retried after a
 /// short pause instead of stopping the server.
@@ -96,7 +107,8 @@ where
         };
         let handler = handler.clone();
         tokio::spawn(async move {
-            let service = service_fn(move |req| {
+            let service = service_fn(move |mut req: Request<hyper::body::Incoming>| {
+                req.extensions_mut().insert(PeerAddr(peer));
                 let response = handler(req);
                 async move { Ok::<_, Infallible>(response.await) }
             });
