@@ -1,4 +1,4 @@
-# ADR-0021: Integrations: firewall adapters and event sinks, starting with Kafka
+# ADR-0020: Integrations: firewall adapters and event sinks, starting with Kafka
 
 - **Status:** Proposed
 - **Date:** 2026-10-24

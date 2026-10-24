@@ -6,14 +6,14 @@ Work runs in parallel streams; patterns and code are taken from Nepheral
 
 | # | Milestone | ADRs | Done when |
 |---|---|---|---|
-| M0 | Decisions recorded | 0001 to 0021 | ADRs accepted by the team |
+| M0 | Decisions recorded | 0001 to 0020 | ADRs accepted by the team |
 | M1 | Workspace skeleton | 0012, 0013 | `just check` green locally and in Docker (done locally) |
-| M2 | Agent under test | 0009, 0020 | OpenCode + Ollama on the 4070, and OpenCode through OpenRouter, both via the Core proxy |
+| M2 | Agent under test | 0009 | OpenCode + Ollama on the 4070 through the Core proxy |
 | M3 | Evaluation set | 0010 | ~30 legitimate and ~30 attack tasks with a runner that resets the workspace |
 | M4 | Hook, daemon, decision | 0004, 0015 | Plugin -> daemon -> Core `/decide`; rules deny the attacks; fail closed end to end |
 | M5 | Proxy and cross-check | 0004, 0016 | Proxy records streams; disabling the hook raises an evasion alert |
-| M6 | Network containment | 0018, 0021 | Evasion or exfiltration puts the host in the OpenWrt or MikroTik quarantine set; owner lifts it |
-| M6b | Event sinks | 0021 | Decisions, alerts and containment published to Kafka (container in compose), webhook and CEF syslog |
+| M6 | Network containment | 0018, 0020 | Evasion or exfiltration puts the host in the OpenWrt or MikroTik quarantine set; owner lifts it |
+| M6b | Event sinks | 0020 | Decisions, alerts and containment published to Kafka (container in compose), webhook and CEF syslog |
 | M7 | Signed heads and witness | 0006, 0019 | Hybrid Ed25519 + ML-DSA heads verified by the witness; an edited record fails |
 | M8 | Witness app | 0013 | Datadog-style dashboard on desktop and APK, from Nepheral's Tauri shell |
 | M9 | Pairing and passkeys | 0017 | Core inactive until paired; opening the record with the passkey |
@@ -26,7 +26,7 @@ Work runs in parallel streams; patterns and code are taken from Nepheral
 |---|---|
 | Core and detection (Rust) | M4, M5, M10 |
 | Agent and evaluation | M2, M3, M11 |
-| Network and integrations | M6, M6b, M2 (OpenRouter) |
+| Network and integrations | M6, M6b |
 | Crypto and record | M7, M9 |
 | App (Tauri, from Nepheral) | M8, M9 |
 

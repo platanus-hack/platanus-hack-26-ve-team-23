@@ -59,11 +59,9 @@ Ollama (RTX 4070) <---forwarded---- cross-check hook vs proxy ---alert-> alerts
 A new Core does nothing until it is paired with the owner's phone
 ([ADR-0017](docs/adr/0017-core-pairing-and-passkeys.md)). Chain heads carry
 hybrid Ed25519 + ML-DSA signatures
-([ADR-0019](docs/adr/0019-post-quantum-signatures-on-heads.md)). Remote
-models go through OpenRouter with the key held only by the Core
-([ADR-0020](docs/adr/0020-openrouter-upstream-and-key-custody.md)).
+([ADR-0019](docs/adr/0019-post-quantum-signatures-on-heads.md)).
 Events are published to Kafka, webhooks and SIEMs (CEF syslog), metadata
-only ([ADR-0021](docs/adr/0021-integrations-firewalls-and-event-sinks.md)).
+only ([ADR-0020](docs/adr/0020-integrations-firewalls-and-event-sinks.md)).
 
 **Prevent, not just record.** A black box tells you why the plane crashed;
 HAWK stops the action before it runs, and contains the host at the network

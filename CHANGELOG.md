@@ -25,11 +25,10 @@ Every entry is written when the change is merged, under `Unreleased`.
 - ADR-0015 to ADR-0017: three edges (host daemon, Core, mobile app), hyper
   on tokio instead of axum with our own framed protocol between edges, and
   pairing with passkeys (supersedes ADR-0008 for recovery).
-- ADR-0018 to ADR-0020: network containment through MikroTik and Cisco
-  firewalls, hybrid Ed25519 + ML-DSA signatures on heads, OpenRouter as a
-  remote upstream with the key held only by the Core. ADR-0006 now states
-  why a chain sealed on the infected machine proves nothing.
-- ADR-0021: `integrations` crate with firewall adapters (OpenWrt,
+- ADR-0018 and ADR-0019: network containment through the firewall, and
+  hybrid Ed25519 + ML-DSA signatures on heads. ADR-0006 now states why a
+  chain sealed on the infected machine proves nothing.
+- ADR-0020: `integrations` crate with firewall adapters (OpenWrt,
   MikroTik, Cisco) and event sinks (Kafka, webhook, CEF syslog); OpenWrt
   added to ADR-0018.
 - Roadmap with full scope in parallel streams.

@@ -90,7 +90,7 @@ is dropped. Adapters behind one trait:
 ### Next steps
 
 1. `Firewall` trait and dry-run adapter in the `integrations` crate
-   (ADR-0021).
+   (ADR-0020).
 2. OpenWrt rpcd plugin, its ACL and the nftables set and rule, as an
    installable package.
 3. MikroTik adapter and the one-time rule the owner installs.

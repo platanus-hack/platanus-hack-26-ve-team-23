@@ -53,8 +53,7 @@ supersedes it; the old one only has its status updated.
 | [0017](0017-core-pairing-and-passkeys.md) | The Core stays inactive until paired with a phone; the owner credential is a passkey | Proposed |
 | [0018](0018-network-containment-through-the-firewall.md) | Network containment through the firewall (OpenWrt and MikroTik first, Cisco next) | Proposed |
 | [0019](0019-post-quantum-signatures-on-heads.md) | Hybrid post-quantum signatures on chain heads | Proposed |
-| [0020](0020-openrouter-upstream-and-key-custody.md) | OpenRouter as a remote upstream; provider keys live only on the Core | Proposed |
-| [0021](0021-integrations-firewalls-and-event-sinks.md) | Integrations: firewall adapters and event sinks, starting with Kafka | Proposed |
+| [0020](0020-integrations-firewalls-and-event-sinks.md) | Integrations: firewall adapters and event sinks, starting with Kafka | Proposed |
 
 ## Open questions
 
