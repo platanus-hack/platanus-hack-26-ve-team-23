@@ -1,68 +1,261 @@
-//! Host daemon (ADR-0015). Listens on `HOST_DAEMON_ADDR` (default
+//! Host daemon (ADR-0015). Listens on loopback (`HOST_DAEMON_ADDR`, default
 //! `127.0.0.1:7070`) for the agent hooks of this machine and relays each
-//! request to the Core at `GUARDIAN_URL`.
+//! request to the Core over QUIC with mutual TLS (ADR-0023).
 //!
-//! It never decides: it returns the Core's answer, and denies when there is
-//! no Core configured, the Core does not answer, or the answer is unusable.
+//! Loopback HTTP is the only HTTP left: OpenCode cannot speak QUIC, and
+//! nothing on that socket leaves the machine.
+//!
+//! Finding the Core (ADR-0024): `GUARDIAN_CORE` (`ip:port`) when set,
+//! otherwise the first active Core discovered on the network. The Core's
+//! identity is pinned: `GUARDIAN_CORE_ID` when set, otherwise the first one
+//! this daemon talks to, stored in `core.pin`.
+//!
+//! It never decides: it returns the Core's answer, and denies when the Core
+//! cannot be found or reached, or the answer is unusable.
 
 #![forbid(unsafe_code)]
 
-use std::{error::Error as StdError, net::SocketAddr, sync::Arc, time::Duration};
+mod notice;
+
+use std::{
+    error::Error as StdError,
+    fs,
+    io::Write as _,
+    net::SocketAddr,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
 use bytes::Bytes;
-use edge_net::http::{json, post_json, read_json, text, Body, Client};
-use guardian_core::{Decision, ToolCall};
+use ed25519_dalek::SigningKey;
+use edge_net::{
+    discovery,
+    http::{json, read_json, text, Body},
+    quic::{self, PeerId},
+};
+use guardian_core::{
+    wire::{Request as Wire, Response as WireResponse},
+    Decision, ToolCall,
+};
 use hyper::{Method, Request, Response, StatusCode};
-use tokio::net::TcpListener;
+use quinn::Connection;
+use rand::rngs::OsRng;
+use tokio::{net::TcpListener, sync::Mutex};
 use tracing_subscriber::EnvFilter;
 
 const MAX_BODY_BYTES: usize = 256 * 1024;
-const MAX_ANSWER_BYTES: usize = 16 * 1024;
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 /// Longer than the owner's 60 s to answer an `ask` (ADR-0022).
 const DECIDE_TIMEOUT: Duration = Duration::from_secs(65);
+const DISCOVERY_WAIT: Duration = Duration::from_secs(2);
+
+/// How to find the Core.
+#[derive(Debug, Clone)]
+enum Locator {
+    Fixed(SocketAddr),
+    Discover,
+    /// For tests: no Core at all.
+    #[cfg(test)]
+    None,
+}
+
+struct Link {
+    client: quic::Client,
+    locator: Locator,
+    pin_file: Option<PathBuf>,
+    pinned: Mutex<Option<PeerId>>,
+    conn: Mutex<Option<Connection>>,
+}
+
+impl std::fmt::Debug for Link {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Link")
+            .field("locator", &self.locator)
+            .finish_non_exhaustive()
+    }
+}
 
 #[derive(Debug, Clone)]
 struct Relay {
-    core: Option<Arc<CoreLink>>,
+    link: Arc<Link>,
 }
 
-#[derive(Debug)]
-struct CoreLink {
-    client: Client,
-    decide_url: String,
+fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(path)?.write_all(bytes)
+}
+
+/// This machine's name, for the app. A label only: the identity is the key.
+fn hostname() -> String {
+    std::env::var("COMPUTERNAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .ok()
+        .or_else(|| fs::read_to_string("/etc/hostname").ok())
+        .map(|h| h.trim().to_owned())
+        .filter(|h| !h.is_empty())
+        .unwrap_or_else(|| "unknown-host".into())
+}
+
+fn hex32(text: &str) -> Option<[u8; 32]> {
+    hex::decode(text.trim()).ok()?.try_into().ok()
+}
+
+/// The daemon's Ed25519 identity, kept in the data directory (to be sealed by
+/// the TPM, ADR-0021).
+fn load_or_create_key(dir: &Path) -> std::io::Result<SigningKey> {
+    fs::create_dir_all(dir)?;
+    let path = dir.join("host.key");
+    if let Some(seed) = fs::read_to_string(&path).ok().as_deref().and_then(hex32) {
+        return Ok(SigningKey::from_bytes(&seed));
+    }
+    let key = SigningKey::generate(&mut OsRng);
+    write_private(&path, hex::encode(key.to_bytes()).as_bytes())?;
+    Ok(key)
 }
 
 impl Relay {
-    fn new(guardian_url: Option<String>) -> Self {
-        let core = guardian_url.map(|url| {
-            Arc::new(CoreLink {
-                client: edge_net::http::client(CONNECT_TIMEOUT),
-                decide_url: format!("{}/decide", url.trim_end_matches('/')),
-            })
+    fn new(
+        key: &SigningKey,
+        locator: Locator,
+        pin: Option<PeerId>,
+        pin_file: Option<PathBuf>,
+    ) -> Result<Self, String> {
+        let identity = quic::TlsIdentity::from_signing_key(key, "hawk-host")?;
+        let pinned = pin.or_else(|| {
+            pin_file
+                .as_deref()
+                .and_then(|p| fs::read_to_string(p).ok())
+                .as_deref()
+                .and_then(hex32)
         });
-        Self { core }
+        Ok(Self {
+            link: Arc::new(Link {
+                client: quic::Client::new(identity)?,
+                locator,
+                pin_file,
+                pinned: Mutex::new(pinned),
+                conn: Mutex::new(None),
+            }),
+        })
+    }
+
+    /// Where the Core is right now.
+    async fn find(&self, pinned: Option<PeerId>) -> Result<SocketAddr, String> {
+        match &self.link.locator {
+            Locator::Fixed(addr) => Ok(*addr),
+            #[cfg(test)]
+            Locator::None => Err("no core configured".into()),
+            Locator::Discover => {
+                let found = tokio::task::spawn_blocking(|| discovery::browse(DISCOVERY_WAIT))
+                    .await
+                    .map_err(|e| e.to_string())??;
+                found
+                    .into_iter()
+                    .filter(|f| f.txt.get("state").map(String::as_str) == Some("active"))
+                    .find(|f| match pinned {
+                        Some(pin) => f.txt.get("id").and_then(|id| hex32(id)) == Some(pin),
+                        None => true,
+                    })
+                    .and_then(|f| f.addrs.first().copied())
+                    .ok_or_else(|| "no active core found on the network".to_owned())
+            }
+        }
+    }
+
+    async fn connection(&self) -> Result<Connection, String> {
+        let mut slot = self.link.conn.lock().await;
+        if let Some(conn) = slot.as_ref() {
+            if conn.close_reason().is_none() {
+                return Ok(conn.clone());
+            }
+        }
+        let pinned = *self.link.pinned.lock().await;
+        let addr = self.find(pinned).await?;
+        let (conn, id) = self.link.client.connect(addr, pinned).await?;
+        if pinned.is_none() {
+            // Trust on first use, until host enrolment exists (ADR-0021).
+            tracing::warn!(core = %hex::encode(&id[..8]), "pinning this core");
+            *self.link.pinned.lock().await = Some(id);
+            if let Some(path) = &self.link.pin_file {
+                let _ = write_private(path, hex::encode(id).as_bytes());
+            }
+        }
+        self.introduce(&conn, id).await;
+        *slot = Some(conn.clone());
+        Ok(conn)
+    }
+
+    /// Tells the Core how to show this host, and answers what the Core asks
+    /// on this connection (the identification signal).
+    async fn introduce(&self, conn: &Connection, core: PeerId) {
+        let hello = Wire::HostHello {
+            hostname: hostname(),
+            os: std::env::consts::OS.to_owned(),
+        };
+        if let Err(err) =
+            quic::request::<_, WireResponse>(conn, &hello, Duration::from_secs(5)).await
+        {
+            tracing::warn!(%err, "core did not take the host hello");
+        }
+        tokio::spawn(quic::serve_connection(
+            conn.clone(),
+            core,
+            |_peer, _addr, req: Wire| async move {
+                match req {
+                    Wire::IdentifySelf {
+                        core_name,
+                        fingerprint,
+                    } => {
+                        let text = notice::message(&core_name, &fingerprint, &hostname());
+                        let shown = tokio::task::spawn_blocking(move || notice::show(&text))
+                            .await
+                            .unwrap_or(false);
+                        if !shown {
+                            tracing::warn!(
+                                "no desktop notifier accepted the notice; it is in the log"
+                            );
+                        }
+                        WireResponse::Ack
+                    }
+                    _ => WireResponse::error("a host daemon only answers identification"),
+                }
+            },
+        ));
     }
 
     async fn decide(&self, call: &ToolCall) -> Decision {
-        let Some(core) = &self.core else {
-            return Decision::deny("no core configured");
-        };
-        match post_json::<_, Decision>(
-            &core.client,
-            &core.decide_url,
-            call,
-            DECIDE_TIMEOUT,
-            MAX_ANSWER_BYTES,
-        )
-        .await
-        {
-            Ok(decision) => decision,
-            Err(err) => {
-                tracing::warn!(?err, "core call failed, denying");
-                Decision::deny("core unreachable")
+        // One retry with a fresh connection if the cached one went stale.
+        for attempt in 0..2 {
+            let conn = match self.connection().await {
+                Ok(conn) => conn,
+                Err(err) => {
+                    tracing::warn!(%err, "core unavailable, denying");
+                    return Decision::deny("core unreachable");
+                }
+            };
+            let req = Wire::Decide { call: call.clone() };
+            match quic::request::<_, WireResponse>(&conn, &req, DECIDE_TIMEOUT).await {
+                Ok(WireResponse::Decision { decision }) => return decision,
+                Ok(other) => {
+                    tracing::warn!(?other, "unexpected answer from the core, denying");
+                    return Decision::deny("unexpected answer from the core");
+                }
+                Err(err) if attempt == 0 => {
+                    tracing::debug!(%err, "retrying with a new connection");
+                    *self.link.conn.lock().await = None;
+                }
+                Err(err) => {
+                    tracing::warn!(%err, "core call failed, denying");
+                }
             }
         }
+        Decision::deny("core unreachable")
     }
 }
 
@@ -94,17 +287,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
 
-    // Loopback by default: only processes on this machine reach the daemon.
     let addr: SocketAddr = std::env::var("HOST_DAEMON_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:7070".into())
         .parse()?;
-    let relay = Relay::new(std::env::var("GUARDIAN_URL").ok());
-    if relay.core.is_none() {
-        tracing::warn!("GUARDIAN_URL not set: every request will be denied");
+    if !addr.ip().is_loopback() {
+        return Err("HOST_DAEMON_ADDR must be a loopback address".into());
     }
+    let dir = PathBuf::from(
+        std::env::var("HOST_DAEMON_DATA_DIR").unwrap_or_else(|_| "host-daemon-data".into()),
+    );
+    let key = load_or_create_key(&dir)?;
+    let locator = match std::env::var("GUARDIAN_CORE") {
+        Ok(core) => Locator::Fixed(core.parse()?),
+        Err(_) => Locator::Discover,
+    };
+    let pin = std::env::var("GUARDIAN_CORE_ID")
+        .ok()
+        .as_deref()
+        .and_then(hex32);
+    let relay = Relay::new(&key, locator, pin, Some(dir.join("core.pin")))?;
+    tracing::warn!(
+        fingerprint = %quic::fingerprint(&key.verifying_key().to_bytes()),
+        hostname = %hostname(),
+        "host identity"
+    );
 
     let listener = TcpListener::bind(addr).await?;
-    tracing::info!(%addr, "host daemon listening");
+    tracing::info!(%addr, "host daemon listening on loopback");
     edge_net::http::serve(listener, move |req| handle(relay.clone(), req)).await;
     Ok(())
 }
@@ -130,44 +339,54 @@ mod tests {
         serde_json::from_slice(&bytes).unwrap()
     }
 
-    /// A stand-in Core on a free port that answers every call with `answer`.
-    async fn fake_core(answer: Decision) -> String {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        tokio::spawn(edge_net::http::serve(listener, move |_req| {
-            let answer = answer.clone();
-            async move { json(StatusCode::OK, &answer) }
+    /// A stand-in Core over QUIC that answers every decision with `answer`.
+    async fn fake_core(answer: Decision) -> (SocketAddr, PeerId) {
+        let key = SigningKey::generate(&mut OsRng);
+        let identity = quic::TlsIdentity::from_signing_key(&key, "hawk-core").unwrap();
+        let endpoint = quic::server(&identity, "127.0.0.1:0".parse().unwrap()).unwrap();
+        let addr = endpoint.local_addr().unwrap();
+        tokio::spawn(quic::serve(endpoint, move |_peer, _addr, req: Wire| {
+            let decision = answer.clone();
+            async move {
+                match req {
+                    Wire::HostHello { .. } => WireResponse::Ack,
+                    _ => WireResponse::Decision { decision },
+                }
+            }
         }));
-        url
+        (addr, identity.peer_id)
+    }
+
+    fn relay(locator: Locator, pin: Option<PeerId>) -> Relay {
+        Relay::new(&SigningKey::generate(&mut OsRng), locator, pin, None).unwrap()
     }
 
     #[tokio::test]
-    async fn returns_the_core_answer() {
-        let relay = Relay::new(Some(fake_core(Decision::Allow).await));
-        assert!(ask(relay, CALL).await.is_allow());
+    async fn returns_the_core_answer_over_quic() {
+        let (addr, id) = fake_core(Decision::Allow).await;
+        assert!(ask(relay(Locator::Fixed(addr), Some(id)), CALL)
+            .await
+            .is_allow());
+    }
+
+    #[tokio::test]
+    async fn refuses_a_core_with_another_identity() {
+        let (addr, _) = fake_core(Decision::Allow).await;
+        assert!(!ask(relay(Locator::Fixed(addr), Some([5u8; 32])), CALL)
+            .await
+            .is_allow());
     }
 
     #[tokio::test]
     async fn denies_without_a_core() {
-        assert!(!ask(Relay::new(None), CALL).await.is_allow());
-    }
-
-    #[tokio::test]
-    async fn denies_when_the_core_is_down() {
-        // Bind and drop to get a port nobody listens on.
-        let port = TcpListener::bind("127.0.0.1:0")
-            .await
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
-        let relay = Relay::new(Some(format!("http://127.0.0.1:{port}")));
-        assert!(!ask(relay, CALL).await.is_allow());
+        assert!(!ask(relay(Locator::None, None), CALL).await.is_allow());
     }
 
     #[tokio::test]
     async fn denies_malformed_calls() {
-        let relay = Relay::new(Some(fake_core(Decision::Allow).await));
-        assert!(!ask(relay, b"{nope").await.is_allow());
+        let (addr, id) = fake_core(Decision::Allow).await;
+        assert!(!ask(relay(Locator::Fixed(addr), Some(id)), b"{nope")
+            .await
+            .is_allow());
     }
 }

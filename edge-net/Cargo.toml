@@ -15,6 +15,17 @@ bytes.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
+hex.workspace = true
+sha2.workspace = true
+quinn.workspace = true
+rustls.workspace = true
+rcgen.workspace = true
+ed25519-dalek.workspace = true
+mdns-sd.workspace = true
+local-ip-address.workspace = true
+
+[dev-dependencies]
+rand.workspace = true
 
 [lints]
 workspace = true

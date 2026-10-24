@@ -1,54 +1,88 @@
 //! Commands the web view may call. All logic lives here: the web view only
 //! shows results, and no key material ever crosses into it (ADR-0013).
 //!
-//! The owner key and the epoch key are kept in the app's data directory for
-//! the desktop build and the demo. On Android they move into the Keystore
-//! (see PENDIENTES.md); the commands do not change.
+//! The app talks to its Core only over QUIC with mutual TLS (ADR-0023): the
+//! app has its own device identity, the Core's identity is pinned at pairing,
+//! and the owner's signature binds that pair (ADR-0017). Cores are found on
+//! the network by mDNS; the owner never types an address (ADR-0024).
+//!
+//! Keys live in the app's data directory for the desktop build and the demo:
+//! `device.key` (Ed25519, transport identity), `owner.key` (P-256, owner
+//! signatures), `epoch.key` (X25519, opens the record). On Android they move
+//! into the Keystore (see PENDIENTES.md).
 
 use std::{
     fs,
     io::Write,
+    net::SocketAddr,
     path::{Path, PathBuf},
     time::Duration,
 };
 
-use edge_net::http::{client, get_json, post_json};
+use edge_net::{
+    discovery,
+    quic::{self, PeerId},
+};
 use guardian_core::{
     pairing::{confirmation_code, pair_message},
-    seal, CorePublic, SignedHead,
+    seal,
+    wire::{configure_message, CoreConfig, FirewallConfig, HostInfo, Request, Response},
+    CorePublic, SignedHead,
 };
 use p256::ecdsa::{signature::Signer as _, Signature, SigningKey};
+use quinn::Connection;
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
+use tauri::{Manager, State};
+use tokio::sync::Mutex;
 
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
-const CALL_TIMEOUT: Duration = Duration::from_secs(5);
-const MAX_ANSWER: usize = 4 * 1024 * 1024;
+const CALL_TIMEOUT: Duration = Duration::from_secs(10);
+const DISCOVERY_WAIT: Duration = Duration::from_millis(2500);
 /// Heads shown in the dashboard, newest last.
 const HEADS_SHOWN: usize = 50;
+
+/// The live QUIC connection to the paired Core, reused across commands.
+#[derive(Default)]
+pub struct Link {
+    conn: Mutex<Option<Connection>>,
+}
+
+/// The Core this app is paired with, as remembered between runs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Remembered {
+    id: String,
+    last_addr: Option<String>,
+    name: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CoreRef {
+    id: String,
+    fingerprint: String,
+    name: Option<String>,
+}
 
 #[derive(Debug, Serialize)]
 pub struct AppInfo {
     version: &'static str,
-    paired_here: bool,
+    core: Option<CoreRef>,
+    device_fingerprint: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct Offer {
-    core_public: CorePublic,
-    nonce: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct Paired {
-    confirmation_code: String,
+#[derive(Debug, Serialize)]
+pub struct Discovered {
+    id: String,
+    fingerprint: String,
+    name: String,
+    state: String,
+    address: String,
 }
 
 #[derive(Debug, Serialize)]
 pub struct PairResult {
     /// Must match the code the Core prints in its log.
     confirmation_code: String,
+    fingerprint: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -63,30 +97,23 @@ pub struct HeadView {
 pub struct Dashboard {
     reachable: bool,
     error: Option<String>,
-    /// This app holds the owner key the Core was paired with.
     paired_here: bool,
-    /// The Core's identity equals the one pinned at pairing.
+    /// True when reachable: the TLS handshake refuses any other Core key.
     identity_matches: Option<bool>,
     status: Option<serde_json::Value>,
     events: Vec<serde_json::Value>,
+    hosts: Vec<HostInfo>,
     heads_total: usize,
     heads_invalid: usize,
     heads: Vec<HeadView>,
 }
 
+// Files ----------------------------------------------------------------------
+
 fn data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
-}
-
-fn base(core_url: &str) -> Result<String, String> {
-    let url = core_url.trim().trim_end_matches('/');
-    if url.starts_with("http://") || url.starts_with("https://") {
-        Ok(url.to_owned())
-    } else {
-        Err("the Core address must start with http:// or https://".into())
-    }
 }
 
 fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
@@ -100,24 +127,18 @@ fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     options.open(path)?.write_all(bytes)
 }
 
-fn owner_key(dir: &Path) -> Result<SigningKey, String> {
-    let path = dir.join("owner.key");
-    if let Ok(text) = fs::read_to_string(&path) {
-        let bytes = hex::decode(text.trim()).map_err(|_| "owner.key is corrupt")?;
-        return SigningKey::from_slice(&bytes).map_err(|_| "owner.key is corrupt".to_owned());
-    }
-    let key = SigningKey::random(&mut OsRng);
-    write_private(&path, hex::encode(key.to_bytes()).as_bytes()).map_err(|e| e.to_string())?;
-    Ok(key)
+fn read_hex32(path: &Path) -> Option<[u8; 32]> {
+    hex::decode(fs::read_to_string(path).ok()?.trim())
+        .ok()?
+        .try_into()
+        .ok()
 }
 
-fn epoch_secret(dir: &Path) -> Result<[u8; 32], String> {
-    let path = dir.join("epoch.key");
-    if let Ok(text) = fs::read_to_string(&path) {
-        return hex::decode(text.trim())
-            .ok()
-            .and_then(|b| b.try_into().ok())
-            .ok_or_else(|| "epoch.key is corrupt".to_owned());
+/// A 32-byte secret stored as hex, created on first use.
+fn secret32(dir: &Path, file: &str) -> Result<[u8; 32], String> {
+    let path = dir.join(file);
+    if let Some(secret) = read_hex32(&path) {
+        return Ok(secret);
     }
     let mut secret = [0u8; 32];
     OsRng.fill_bytes(&mut secret);
@@ -125,111 +146,321 @@ fn epoch_secret(dir: &Path) -> Result<[u8; 32], String> {
     Ok(secret)
 }
 
+fn device_key(dir: &Path) -> Result<ed25519_dalek::SigningKey, String> {
+    Ok(ed25519_dalek::SigningKey::from_bytes(&secret32(
+        dir,
+        "device.key",
+    )?))
+}
+
+fn owner_key(dir: &Path) -> Result<SigningKey, String> {
+    SigningKey::from_slice(&secret32(dir, "owner.key")?)
+        .map_err(|_| "owner.key is corrupt".to_owned())
+}
+
 fn pinned(dir: &Path) -> Option<CorePublic> {
     serde_json::from_slice(&fs::read(dir.join("pinned.json")).ok()?).ok()
 }
 
+fn remembered(dir: &Path) -> Option<Remembered> {
+    serde_json::from_slice(&fs::read(dir.join("core.json")).ok()?).ok()
+}
+
+fn remember(dir: &Path, core: &Remembered) -> Result<(), String> {
+    fs::write(
+        dir.join("core.json"),
+        serde_json::to_vec(core).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())
+}
+
+fn parse_id(hex_id: &str) -> Result<PeerId, String> {
+    hex::decode(hex_id)
+        .ok()
+        .and_then(|b| b.try_into().ok())
+        .ok_or_else(|| "bad core id".to_owned())
+}
+
+// Network --------------------------------------------------------------------
+
+async fn browse() -> Result<Vec<discovery::Found>, String> {
+    tokio::task::spawn_blocking(|| discovery::browse(DISCOVERY_WAIT))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn client(dir: &Path) -> Result<quic::Client, String> {
+    quic::Client::new(quic::TlsIdentity::from_signing_key(
+        &device_key(dir)?,
+        "hawk-witness",
+    )?)
+}
+
+/// Connects to the remembered Core: its last address first, then wherever
+/// discovery finds that same identity.
+async fn connect(dir: &Path, link: &Link) -> Result<Connection, String> {
+    let mut slot = link.conn.lock().await;
+    if let Some(conn) = slot.as_ref() {
+        if conn.close_reason().is_none() {
+            return Ok(conn.clone());
+        }
+    }
+    let mut core = remembered(dir).ok_or("this app is not paired with a Core")?;
+    let id = parse_id(&core.id)?;
+    let client = client(dir)?;
+
+    if let Some(addr) = core
+        .last_addr
+        .as_deref()
+        .and_then(|a| a.parse::<SocketAddr>().ok())
+    {
+        if let Ok((conn, _)) = client.connect(addr, Some(id)).await {
+            *slot = Some(conn.clone());
+            return Ok(conn);
+        }
+    }
+    let found = browse().await?;
+    let addr = found
+        .iter()
+        .find(|f| f.txt.get("id").map(String::as_str) == Some(core.id.as_str()))
+        .and_then(|f| f.addrs.first().copied())
+        .ok_or("the paired Core is not on this network")?;
+    let (conn, _) = client.connect(addr, Some(id)).await?;
+    core.last_addr = Some(addr.to_string());
+    let _ = remember(dir, &core);
+    *slot = Some(conn.clone());
+    Ok(conn)
+}
+
+async fn call(conn: &Connection, req: &Request) -> Result<Response, String> {
+    match quic::request::<_, Response>(conn, req, CALL_TIMEOUT).await? {
+        Response::Error { message } => Err(message),
+        other => Ok(other),
+    }
+}
+
+// Commands -------------------------------------------------------------------
+
 #[tauri::command]
 pub fn app_info(app: tauri::AppHandle) -> Result<AppInfo, String> {
+    let dir = data_dir(&app)?;
+    let core = match (remembered(&dir), pinned(&dir)) {
+        (Some(core), Some(_)) => {
+            let id = parse_id(&core.id)?;
+            Some(CoreRef {
+                fingerprint: quic::fingerprint(&id),
+                id: core.id,
+                name: core.name,
+            })
+        }
+        _ => None,
+    };
     Ok(AppInfo {
         version: env!("CARGO_PKG_VERSION"),
-        paired_here: pinned(&data_dir(&app)?).is_some(),
+        core,
+        device_fingerprint: quic::fingerprint(&device_key(&dir)?.verifying_key().to_bytes()),
     })
 }
 
-/// Pairs this app with a Core that has not been paired yet (ADR-0017).
+/// Cores announcing themselves on the local network.
 #[tauri::command]
-pub async fn pair_core(app: tauri::AppHandle, core_url: String) -> Result<PairResult, String> {
+pub async fn discover() -> Result<Vec<Discovered>, String> {
+    let mut out: Vec<Discovered> = browse()
+        .await?
+        .into_iter()
+        .filter_map(|f| {
+            let id = f.txt.get("id")?.clone();
+            let peer = parse_id(&id).ok()?;
+            Some(Discovered {
+                fingerprint: quic::fingerprint(&peer),
+                name: f
+                    .txt
+                    .get("name")
+                    .cloned()
+                    .filter(|n| !n.is_empty())
+                    .unwrap_or(f.instance),
+                state: f.txt.get("state").cloned().unwrap_or_default(),
+                address: f.addrs.first().map(ToString::to_string).unwrap_or_default(),
+                id,
+            })
+        })
+        .collect();
+    out.sort_by(|a, b| a.state.cmp(&b.state).reverse().then(a.name.cmp(&b.name)));
+    Ok(out)
+}
+
+/// Pairs this app with an unpaired Core (ADR-0017). The handshake proves the
+/// Core holds the key it announced; the owner's signature covers the Core's
+/// identity, the offer nonce and this app's device identity.
+#[tauri::command]
+pub async fn pair_core(
+    app: tauri::AppHandle,
+    link: State<'_, Link>,
+    id: String,
+    address: String,
+) -> Result<PairResult, String> {
     let dir = data_dir(&app)?;
     if pinned(&dir).is_some() {
         return Err("this app is already paired with a Core".into());
     }
-    let base = base(&core_url)?;
-    let http = client(CONNECT_TIMEOUT);
+    let core_id = parse_id(&id)?;
+    let addr: SocketAddr = address.parse().map_err(|_| "bad address")?;
+    let device = device_key(&dir)?;
+    let (conn, _) = client(&dir)?.connect(addr, Some(core_id)).await?;
 
-    let offer: Offer = get_json(&http, &format!("{base}/pair"), CALL_TIMEOUT, MAX_ANSWER)
-        .await
-        .map_err(|e| format!("could not get the pairing offer: {e:?}"))?;
-    let nonce = hex::decode(&offer.nonce).map_err(|_| "the Core sent a bad nonce")?;
-
+    let (core_public, nonce) = match call(&conn, &Request::PairOffer).await? {
+        Response::Offer { core_public, nonce } => (core_public, nonce),
+        other => return Err(format!("unexpected answer: {other:?}")),
+    };
+    if core_public.ed25519 != core_id {
+        return Err("the Core's identity does not match the one it announced".into());
+    }
+    let nonce = hex::decode(&nonce).map_err(|_| "the Core sent a bad nonce")?;
     let owner = owner_key(&dir)?;
-    let epoch = epoch_secret(&dir)?;
+    let epoch = secret32(&dir, "epoch.key")?;
     let owner_public = owner.verifying_key().to_encoded_point(true);
-    let signature: Signature = owner.sign(&pair_message(&nonce, &offer.core_public.ed25519));
+    let device_id = device.verifying_key().to_bytes();
+    let signature: Signature = owner.sign(&pair_message(&nonce, &core_public.ed25519, &device_id));
 
-    let answer: Paired = post_json(
-        &http,
-        &format!("{base}/pair"),
-        &serde_json::json!({
-            "owner_public": hex::encode(owner_public.as_bytes()),
-            "epoch_public": hex::encode(seal::epoch_public(&epoch)),
-            "signature": hex::encode(signature.to_der().as_bytes()),
-        }),
-        CALL_TIMEOUT,
-        MAX_ANSWER,
-    )
-    .await
-    .map_err(|e| format!("the Core rejected the pairing: {e:?}"))?;
-
-    let expected = confirmation_code(&offer.core_public.ed25519, owner_public.as_bytes());
-    if answer.confirmation_code != expected {
+    let request = Request::Pair {
+        owner_public: hex::encode(owner_public.as_bytes()),
+        epoch_public: hex::encode(seal::epoch_public(&epoch)),
+        signature: hex::encode(signature.to_der().as_bytes()),
+    };
+    let code = match call(&conn, &request).await? {
+        Response::Paired { confirmation_code } => confirmation_code,
+        other => return Err(format!("unexpected answer: {other:?}")),
+    };
+    let expected = confirmation_code(&core_public.ed25519, owner_public.as_bytes());
+    if code != expected {
         return Err("confirmation codes differ: someone may be in the middle".into());
     }
     fs::write(
         dir.join("pinned.json"),
-        serde_json::to_vec(&offer.core_public).map_err(|e| e.to_string())?,
+        serde_json::to_vec(&core_public).map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())?;
+    remember(
+        &dir,
+        &Remembered {
+            id,
+            last_addr: Some(address),
+            name: None,
+        },
+    )?;
+    *link.conn.lock().await = Some(conn);
     Ok(PairResult {
         confirmation_code: expected,
+        fingerprint: quic::fingerprint(&core_id),
     })
+}
+
+/// Names the Core and sets its firewall, signed by the owner (ADR-0024).
+#[tauri::command]
+pub async fn configure_core(
+    app: tauri::AppHandle,
+    link: State<'_, Link>,
+    name: String,
+    firewall: FirewallConfig,
+) -> Result<String, String> {
+    let dir = data_dir(&app)?;
+    let config = CoreConfig {
+        name: name.trim().chars().take(48).collect(),
+        firewall,
+    };
+    if config.name.is_empty() {
+        return Err("give the Core a name".into());
+    }
+    let signature: Signature = owner_key(&dir)?.sign(&configure_message(&config));
+    let conn = connect(&dir, &link).await?;
+    let request = Request::Configure {
+        config,
+        signature: hex::encode(signature.to_der().as_bytes()),
+    };
+    match call(&conn, &request).await? {
+        Response::Configured { config: summary } => {
+            if let Some(mut core) = remembered(&dir) {
+                core.name = Some(summary.name.clone());
+                let _ = remember(&dir, &core);
+            }
+            Ok(summary.name)
+        }
+        other => Err(format!("unexpected answer: {other:?}")),
+    }
+}
+
+/// Asks one host to show its identification notice on its screen.
+#[tauri::command]
+pub async fn identify_host(
+    app: tauri::AppHandle,
+    link: State<'_, Link>,
+    host: String,
+) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    let conn = connect(&dir, &link).await?;
+    match call(&conn, &Request::Identify { host }).await? {
+        Response::Ack => Ok(()),
+        other => Err(format!("unexpected answer: {other:?}")),
+    }
+}
+
+/// Forgets the paired Core on this device, to run the wizard again. The
+/// keys stay; the Core keeps its pairing until it is reset.
+#[tauri::command]
+pub async fn forget_core(app: tauri::AppHandle, link: State<'_, Link>) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    *link.conn.lock().await = None;
+    for file in ["pinned.json", "core.json"] {
+        let _ = fs::remove_file(dir.join(file));
+    }
+    Ok(())
 }
 
 /// Everything the dashboard shows, with the signed heads verified against the
 /// identity pinned at pairing.
 #[tauri::command]
-pub async fn dashboard(app: tauri::AppHandle, core_url: String) -> Result<Dashboard, String> {
+pub async fn dashboard(app: tauri::AppHandle, link: State<'_, Link>) -> Result<Dashboard, String> {
     let dir = data_dir(&app)?;
-    let base = base(&core_url)?;
-    let http = client(CONNECT_TIMEOUT);
     let pin = pinned(&dir);
-
-    let status: serde_json::Value =
-        match get_json(&http, &format!("{base}/status"), CALL_TIMEOUT, MAX_ANSWER).await {
-            Ok(status) => status,
-            Err(err) => {
-                return Ok(Dashboard {
-                    reachable: false,
-                    error: Some(format!("Core unreachable: {err:?}")),
-                    paired_here: pin.is_some(),
-                    identity_matches: None,
-                    status: None,
-                    events: Vec::new(),
-                    heads_total: 0,
-                    heads_invalid: 0,
-                    heads: Vec::new(),
-                })
-            }
-        };
-    let identity: Option<CorePublic> =
-        get_json(&http, &format!("{base}/identity"), CALL_TIMEOUT, MAX_ANSWER)
-            .await
-            .ok();
-    let events: Vec<serde_json::Value> =
-        get_json(&http, &format!("{base}/events"), CALL_TIMEOUT, MAX_ANSWER)
-            .await
-            .unwrap_or_default();
-    let heads: Vec<SignedHead> =
-        get_json(&http, &format!("{base}/heads"), CALL_TIMEOUT, MAX_ANSWER)
-            .await
-            .unwrap_or_default();
-
-    let identity_matches = match (&pin, &identity) {
-        (Some(pin), Some(identity)) => Some(pin == identity),
-        _ => None,
+    let unreachable = |error: String| Dashboard {
+        reachable: false,
+        error: Some(error),
+        paired_here: pin.is_some(),
+        identity_matches: None,
+        status: None,
+        events: Vec::new(),
+        hosts: Vec::new(),
+        heads_total: 0,
+        heads_invalid: 0,
+        heads: Vec::new(),
     };
+    let conn = match connect(&dir, &link).await {
+        Ok(conn) => conn,
+        Err(err) => return Ok(unreachable(err)),
+    };
+    let status = match call(&conn, &Request::Status).await {
+        Ok(Response::Status { status }) => status,
+        Ok(other) => return Ok(unreachable(format!("unexpected answer: {other:?}"))),
+        Err(err) => {
+            *link.conn.lock().await = None;
+            return Ok(unreachable(err));
+        }
+    };
+    let events = match call(&conn, &Request::Events { since: None }).await {
+        Ok(Response::Events { events }) => events,
+        _ => Vec::new(),
+    };
+    let hosts = match call(&conn, &Request::Hosts).await {
+        Ok(Response::Hosts { hosts }) => hosts,
+        _ => Vec::new(),
+    };
+    let heads: Vec<SignedHead> = match call(&conn, &Request::Heads { since: None }).await {
+        Ok(Response::Heads { heads }) => heads,
+        _ => Vec::new(),
+    };
+
     // Heads are checked against the pinned key, never against what the Core
-    // claims now: a swapped Core fails every head.
+    // claims now.
     let views: Vec<HeadView> = heads
         .iter()
         .map(|h| HeadView {
@@ -240,17 +471,18 @@ pub async fn dashboard(app: tauri::AppHandle, core_url: String) -> Result<Dashbo
         })
         .collect();
     let invalid = views.iter().filter(|h| !h.valid).count();
-    let shown = views.len().saturating_sub(HEADS_SHOWN);
+    let skip = views.len().saturating_sub(HEADS_SHOWN);
 
     Ok(Dashboard {
         reachable: true,
         error: None,
         paired_here: pin.is_some(),
-        identity_matches,
+        identity_matches: Some(true),
         status: Some(status),
         events,
+        hosts,
         heads_total: views.len(),
         heads_invalid: invalid,
-        heads: views.into_iter().skip(shown).collect(),
+        heads: views.into_iter().skip(skip).collect(),
     })
 }

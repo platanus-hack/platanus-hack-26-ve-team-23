@@ -14,6 +14,7 @@ pub mod keys;
 pub mod pairing;
 pub mod seal;
 pub mod types;
+pub mod wire;
 
 pub use chain::{verify, ChainError, Digest, HashChain};
 pub use event::{Event, EventKind};

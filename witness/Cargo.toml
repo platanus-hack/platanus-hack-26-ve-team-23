@@ -21,6 +21,9 @@ guardian-core.workspace = true
 edge-net.workspace = true
 p256.workspace = true
 rand.workspace = true
+ed25519-dalek.workspace = true
+quinn.workspace = true
+tokio.workspace = true
 tauri = { version = "2", features = [] }
 serde.workspace = true
 serde_json.workspace = true

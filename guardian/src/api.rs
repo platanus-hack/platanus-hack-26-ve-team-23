@@ -1,120 +1,274 @@
-//! HTTP surface of the Core: the decision endpoint for host daemons, pairing
-//! for the phone, and read-only views for the witness dashboard.
+//! The Core's QUIC surface (ADR-0023). Every request arrives with the
+//! authenticated identity of the peer (its Ed25519 key from the TLS
+//! handshake) and its socket address.
 //!
-//! Every path out of `/decide` that is not an explicit `Allow` from the
-//! detector, recorded in the chain, is a denial (fail closed, ADR-0003,
-//! ADR-0022). An unpaired Core denies everything (ADR-0017).
+//! - Anyone may say hello, ask for the pairing offer, and pair.
+//! - The record (status, events, heads) and configuration are served only to
+//!   the witness identity bound at pairing; configuration also needs the
+//!   owner's signature.
+//! - Every path out of `decide` that is not an explicit `Allow` from the
+//!   detector, recorded in the chain, is a denial (ADR-0003, ADR-0022). An
+//!   unpaired Core denies everything (ADR-0017).
 
 use std::{
-    error::Error as StdError,
-    sync::{Arc, Mutex},
+    net::{IpAddr, SocketAddr},
+    sync::{Arc, Mutex, RwLock},
 };
 
-use bytes::Bytes;
 use detect::Detector;
-use edge_net::http::{json, read_json, text, Body};
-use guardian_core::{Decision, ToolCall};
-use hyper::{Method, Request, Response, StatusCode};
+use edge_net::quic::PeerId;
+use guardian_core::{
+    wire::{ConfigSummary, CoreConfig, FirewallConfig, Request, Response},
+    Decision, EventKind, Severity, ToolCall,
+};
 use integrations::{sinks::Publisher, Firewall, SinkEvent};
 
-use crate::core::{Core, CoreError, PairRequest};
+use crate::{
+    core::{Core, CoreError, EventMeta, PairRequest},
+    hosts::Hosts,
+};
 
-/// Largest request accepted. Checked before parsing.
-const MAX_BODY_BYTES: usize = 256 * 1024;
+/// Called after pairing or configuration, so the network announcement
+/// carries the new state (ADR-0024).
+pub type Announcer = Arc<dyn Fn(&Core) + Send + Sync>;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AppState {
     core: Arc<Core>,
-    firewall: Arc<dyn Firewall>,
+    firewall: Arc<RwLock<Arc<dyn Firewall>>>,
     publisher: Publisher,
     detector: Arc<Mutex<Detector>>,
+    announcer: Announcer,
+    hosts: Arc<Hosts>,
+}
+
+impl std::fmt::Debug for AppState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AppState")
+            .field("core", &self.core)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Builds the firewall adapter a configuration names. Errors fall back to
+/// dry run so a bad router setting never stops the Core from deciding.
+pub fn firewall_from_config(config: &FirewallConfig) -> Arc<dyn Firewall> {
+    let built: Result<Arc<dyn Firewall>, integrations::FirewallError> = match config {
+        FirewallConfig::DryRun => Ok(Arc::new(integrations::dry_run::DryRun::default())),
+        FirewallConfig::Mikrotik {
+            url,
+            user,
+            password,
+            cert_sha256,
+            list,
+        } => integrations::mikrotik::MikroTik::new(
+            url,
+            user,
+            password,
+            cert_sha256
+                .as_deref()
+                .and_then(integrations::tls::parse_fingerprint),
+            list.as_deref().unwrap_or("guardian_quarantine"),
+        )
+        .map(|f| Arc::new(f) as Arc<dyn Firewall>),
+        FirewallConfig::Openwrt {
+            url,
+            user,
+            password,
+            cert_sha256,
+        } => integrations::openwrt::OpenWrt::new(
+            url,
+            user,
+            password,
+            cert_sha256
+                .as_deref()
+                .and_then(integrations::tls::parse_fingerprint),
+        )
+        .map(|f| Arc::new(f) as Arc<dyn Firewall>),
+    };
+    built.unwrap_or_else(|err| {
+        tracing::error!(%err, "firewall configuration rejected, using dry run");
+        Arc::new(integrations::dry_run::DryRun::default())
+    })
 }
 
 impl AppState {
     pub fn new(
         core: Core,
         detector: Detector,
-        firewall: Box<dyn Firewall>,
+        firewall: Arc<dyn Firewall>,
         publisher: Publisher,
+        announcer: Announcer,
     ) -> Self {
         Self {
             core: Arc::new(core),
-            firewall: Arc::from(firewall),
+            firewall: Arc::new(RwLock::new(firewall)),
             publisher,
             detector: Arc::new(Mutex::new(detector)),
+            announcer,
+            hosts: Arc::new(Hosts::default()),
         }
+    }
+
+    #[cfg(test)]
+    pub fn core(&self) -> &Core {
+        &self.core
+    }
+
+    /// Every authenticated connection is offered here; the witness is not a
+    /// host, so it is not registered.
+    pub fn on_connect(&self, peer: PeerId, conn: quinn::Connection) {
+        if !self.is_witness(&peer) {
+            self.hosts.connected(peer, conn);
+        }
+    }
+
+    fn firewall(&self) -> Arc<dyn Firewall> {
+        match self.firewall.read() {
+            Ok(fw) => Arc::clone(&fw),
+            Err(poisoned) => Arc::clone(&poisoned.into_inner()),
+        }
+    }
+
+    fn is_witness(&self, peer: &PeerId) -> bool {
+        self.core.witness_id().is_some_and(|id| &id == peer)
     }
 }
 
-/// `since=N` from the query string, if present and numeric.
-fn since(query: Option<&str>) -> Option<u64> {
-    query?
-        .split('&')
-        .find_map(|pair| pair.strip_prefix("since="))
-        .and_then(|v| v.parse().ok())
+fn summary(config: &CoreConfig) -> ConfigSummary {
+    ConfigSummary {
+        name: config.name.clone(),
+        firewall: config.firewall.kind().to_owned(),
+    }
 }
 
-fn core_error(err: &CoreError) -> Response<Body> {
-    let status = match err {
-        CoreError::AlreadyPaired => StatusCode::CONFLICT,
-        CoreError::BadPairing(_) => StatusCode::BAD_REQUEST,
-        CoreError::NotPaired => StatusCode::PRECONDITION_FAILED,
-        CoreError::Io(_) | CoreError::Corrupt(_) => StatusCode::INTERNAL_SERVER_ERROR,
-    };
-    json(status, &serde_json::json!({ "error": err.to_string() }))
+fn core_error(err: &CoreError) -> Response {
+    Response::error(err.to_string())
 }
 
-pub async fn handle<B>(state: AppState, req: Request<B>) -> Response<Body>
-where
-    B: hyper::body::Body<Data = Bytes>,
-    B::Error: Into<Box<dyn StdError + Send + Sync>>,
-{
-    let query = req.uri().query().map(str::to_owned);
-    match (req.method(), req.uri().path()) {
-        (&Method::GET, "/health") => text(StatusCode::OK, "ok"),
-        (&Method::POST, "/decide") => {
-            let peer = edge_net::http::peer(&req).map(|p| p.ip());
-            let decision = match read_json::<ToolCall, _>(req, MAX_BODY_BYTES).await {
-                Ok(call) => decide(&state, &call, peer).await,
-                Err(_) => Decision::deny("malformed tool call"),
-            };
-            json(StatusCode::OK, &decision)
-        }
-        (&Method::GET, "/pair") => match state.core.pair_offer() {
-            Ok(offer) => json(StatusCode::OK, &offer),
+pub async fn handle(state: AppState, peer: PeerId, addr: SocketAddr, req: Request) -> Response {
+    match req {
+        Request::Hello => Response::Hello {
+            core_public: state.core.public().clone(),
+            paired: state.core.is_paired(),
+            config: state.core.config().as_ref().map(summary),
+        },
+        Request::PairOffer => match state.core.pair_offer() {
+            Ok(offer) => Response::Offer {
+                core_public: offer.core_public,
+                nonce: offer.nonce,
+            },
             Err(err) => core_error(&err),
         },
-        (&Method::POST, "/pair") => match read_json::<PairRequest, _>(req, MAX_BODY_BYTES).await {
-            Ok(request) => match state.core.pair(&request) {
+        Request::Pair {
+            owner_public,
+            epoch_public,
+            signature,
+        } => {
+            let request = PairRequest {
+                owner_public,
+                epoch_public,
+                signature,
+            };
+            match state.core.pair(&request, &peer) {
                 Ok(code) => {
-                    tracing::info!(%code, "paired; confirm this code on the phone");
-                    json(
-                        StatusCode::OK,
-                        &serde_json::json!({ "confirmation_code": code }),
-                    )
+                    tracing::info!(%code, witness = %hex::encode(&peer[..8]), "paired; confirm this code on the phone");
+                    (state.announcer)(&state.core);
+                    Response::Paired {
+                        confirmation_code: code,
+                    }
                 }
                 Err(err) => core_error(&err),
+            }
+        }
+        Request::Configure { config, signature } => {
+            if !state.is_witness(&peer) {
+                return Response::error("only the paired witness may configure this Core");
+            }
+            match state.core.set_config(&config, &signature) {
+                Ok(()) => {
+                    let firewall = firewall_from_config(&config.firewall);
+                    tracing::info!(name = %config.name, firewall = firewall.name(), "configured by the owner");
+                    if let Ok(mut slot) = state.firewall.write() {
+                        *slot = firewall;
+                    }
+                    (state.announcer)(&state.core);
+                    Response::Configured {
+                        config: summary(&config),
+                    }
+                }
+                Err(err) => core_error(&err),
+            }
+        }
+        Request::Status
+        | Request::Heads { .. }
+        | Request::Events { .. }
+        | Request::Hosts
+        | Request::Identify { .. }
+            if !state.is_witness(&peer) =>
+        {
+            Response::error("only the paired witness may read this Core")
+        }
+        Request::Status => match state.core.status() {
+            Ok(status) => {
+                let mut status = serde_json::to_value(status).unwrap_or_default();
+                status["firewall"] = state.firewall().name().into();
+                if let Some(config) = state.core.config() {
+                    status["name"] = config.name.into();
+                }
+                Response::Status { status }
+            }
+            Err(err) => core_error(&err),
+        },
+        Request::Heads { since } => match state.core.heads_since(since) {
+            Ok(heads) => Response::Heads { heads },
+            Err(err) => core_error(&err),
+        },
+        Request::Events { since } => match state.core.events_since(since) {
+            Ok(events) => Response::Events {
+                events: events
+                    .iter()
+                    .filter_map(|e| serde_json::to_value(e).ok())
+                    .collect(),
             },
-            Err(_) => text(StatusCode::BAD_REQUEST, "malformed pairing request"),
-        },
-        (&Method::GET, "/identity") => json(StatusCode::OK, state.core.public()),
-        (&Method::GET, "/status") => match state.core.status() {
-            Ok(status) => json(StatusCode::OK, &status),
             Err(err) => core_error(&err),
         },
-        (&Method::GET, "/heads") => match state.core.heads_since(since(query.as_deref())) {
-            Ok(heads) => json(StatusCode::OK, &heads),
-            Err(err) => core_error(&err),
+        Request::Decide { call } => {
+            state.hosts.seen(&peer);
+            Response::Decision {
+                decision: decide(&state, &call, Some(addr.ip())).await,
+            }
+        }
+        Request::HostHello { hostname, os } => {
+            state.hosts.hello(peer, &hostname, &os);
+            tracing::info!(host = %edge_net::quic::fingerprint(&peer), %hostname, %addr, "host connected");
+            Response::Ack
+        }
+        Request::Hosts => Response::Hosts {
+            hosts: state.hosts.list(),
         },
-        (&Method::GET, "/events") => match state.core.events_since(since(query.as_deref())) {
-            Ok(events) => json(StatusCode::OK, &events),
-            Err(err) => core_error(&err),
-        },
-        _ => text(StatusCode::NOT_FOUND, "not found"),
+        Request::Identify { host } => {
+            let Some(id) = hex::decode(&host)
+                .ok()
+                .and_then(|b| <[u8; 32]>::try_from(b).ok())
+            else {
+                return Response::error("bad host id");
+            };
+            let name = state
+                .core
+                .config()
+                .map(|c| c.name)
+                .unwrap_or_else(|| "HAWK Core".into());
+            match state.hosts.identify(&id, &name).await {
+                Ok(()) => Response::Ack,
+                Err(err) => Response::error(err),
+            }
+        }
+        Request::IdentifySelf { .. } => Response::error("not a host"),
     }
 }
 
-async fn decide(state: &AppState, call: &ToolCall, peer: Option<std::net::IpAddr>) -> Decision {
+async fn decide(state: &AppState, call: &ToolCall, peer: Option<IpAddr>) -> Decision {
     if !state.core.is_paired() {
         return Decision::deny("core not paired");
     }
@@ -137,14 +291,15 @@ async fn decide(state: &AppState, call: &ToolCall, peer: Option<std::net::IpAddr
         contain = verdict.contain,
         "decided"
     );
-    // The host to contain is the TCP peer of this request (never a value the
-    // client declares), so a host cannot get another one quarantined.
+    // The host to contain is the socket address of the authenticated QUIC
+    // peer, never a value the client declares, so a host cannot get another
+    // one quarantined.
     let host = peer.map_or_else(|| "unknown".to_owned(), |ip| ip.to_string());
     state.publisher.send(SinkEvent {
         family: "decisions",
         seq: meta.seq,
         timestamp_ms: meta.timestamp_ms,
-        key: host.clone(),
+        key: host,
         body: serde_json::to_value(&meta).unwrap_or_default(),
     });
     if verdict.contain {
@@ -154,18 +309,14 @@ async fn decide(state: &AppState, call: &ToolCall, peer: Option<std::net::IpAddr
 }
 
 /// Quarantines the host on the network firewall and records the outcome.
-/// A failed cut raises an alert event; the decision itself stays a denial.
-async fn contain(
-    state: &AppState,
-    peer: Option<std::net::IpAddr>,
-    trigger: &crate::core::EventMeta,
-) {
+async fn contain(state: &AppState, peer: Option<IpAddr>, trigger: &EventMeta) {
+    let firewall = state.firewall();
     let reason = trigger
         .reason
         .clone()
         .unwrap_or_else(|| "critical finding".into());
-    let (kind_note, ok) = match peer {
-        Some(ip) => match state.firewall.quarantine(ip, &reason).await {
+    let (note, ok) = match peer {
+        Some(ip) => match firewall.quarantine(ip, &reason).await {
             Ok(()) => ("contained", true),
             Err(err) => {
                 tracing::error!(%err, %ip, "containment failed");
@@ -174,22 +325,22 @@ async fn contain(
         },
         None => ("containment_failed", false),
     };
-    let meta = crate::core::EventMeta {
+    let meta = EventMeta {
         kind: "containment",
         host: peer.map(|p| p.to_string()),
-        severity: Some(guardian_core::Severity::Critical),
-        reason: Some(format!("{kind_note}: {reason}")),
-        ..crate::core::EventMeta::empty()
+        severity: Some(Severity::Critical),
+        reason: Some(format!("{note}: {reason}")),
+        ..EventMeta::empty()
     };
     let content = serde_json::json!({
-        "firewall": state.firewall.name(),
+        "firewall": firewall.name(),
         "host": peer.map(|p| p.to_string()),
         "ok": ok,
         "trigger_seq": trigger.seq,
     });
     match state
         .core
-        .record(guardian_core::EventKind::Contained, meta, &content, true)
+        .record(EventKind::Contained, meta, &content, true)
     {
         Ok(meta) => state.publisher.send(SinkEvent {
             family: "containment",
@@ -205,123 +356,25 @@ async fn contain(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::tests::{pair, TempDir};
-    use http_body_util::{BodyExt, Full};
+    use crate::core::tests::{pair, TempDir, WITNESS};
+    use detect::Rule;
+    use guardian_core::Finding;
+    use integrations::dry_run::DryRun;
 
-    const CALL: &str = r#"{"session":"s","tool":"bash","args":{"command":"ls"},"cwd":"/w"}"#;
+    const STRANGER: PeerId = [9u8; 32];
 
-    fn state(dir: &TempDir) -> AppState {
+    fn addr() -> SocketAddr {
+        "10.0.0.7:5000".parse().unwrap()
+    }
+
+    fn state_with(dir: &TempDir, detector: Detector, firewall: Arc<dyn Firewall>) -> AppState {
         AppState::new(
             Core::open(&dir.0).unwrap(),
-            Detector::new(),
-            Box::new(integrations::dry_run::DryRun::default()),
+            detector,
+            firewall,
             Publisher::none(),
+            Arc::new(|_core: &Core| {}),
         )
-    }
-
-    async fn send(state: &AppState, req: Request<Full<Bytes>>) -> (StatusCode, Bytes) {
-        let response = handle(state.clone(), req).await;
-        let status = response.status();
-        (
-            status,
-            response.into_body().collect().await.unwrap().to_bytes(),
-        )
-    }
-
-    async fn decide_json(state: &AppState, body: &'static str) -> Decision {
-        let req = Request::post("/decide")
-            .body(Full::new(Bytes::from_static(body.as_bytes())))
-            .unwrap();
-        serde_json::from_slice(&send(state, req).await.1).unwrap()
-    }
-
-    #[tokio::test]
-    async fn health_and_unknown_paths() {
-        let dir = TempDir::new("api-health");
-        let s = state(&dir);
-        let get = |p: &'static str| Request::get(p).body(Full::default()).unwrap();
-        assert_eq!(send(&s, get("/health")).await.0, StatusCode::OK);
-        assert_eq!(send(&s, get("/nope")).await.0, StatusCode::NOT_FOUND);
-    }
-
-    #[tokio::test]
-    async fn unpaired_core_denies_and_offers_pairing() {
-        let dir = TempDir::new("api-unpaired");
-        let s = state(&dir);
-        assert!(!decide_json(&s, CALL).await.is_allow());
-        let (status, _) = send(&s, Request::get("/pair").body(Full::default()).unwrap()).await;
-        assert_eq!(status, StatusCode::OK);
-    }
-
-    #[tokio::test]
-    async fn paired_core_allows_records_and_stops_offering() {
-        let dir = TempDir::new("api-paired");
-        let s = state(&dir);
-        pair(&s.core);
-        assert!(decide_json(&s, CALL).await.is_allow());
-        assert!(!decide_json(&s, "{not json").await.is_allow());
-
-        let (status, _) = send(&s, Request::get("/pair").body(Full::default()).unwrap()).await;
-        assert_eq!(status, StatusCode::CONFLICT);
-
-        let (_, body) = send(
-            &s,
-            Request::get("/events?since=0")
-                .body(Full::default())
-                .unwrap(),
-        )
-        .await;
-        let events: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(events.as_array().unwrap().len(), 1);
-        assert_eq!(events[0]["decision"], "allow");
-    }
-
-    #[test]
-    fn since_parses_the_query() {
-        assert_eq!(since(Some("since=7")), Some(7));
-        assert_eq!(since(Some("a=1&since=3")), Some(3));
-        assert_eq!(since(Some("since=x")), None);
-        assert_eq!(since(None), None);
-    }
-
-    use detect::Rule;
-    use guardian_core::{Finding, Severity};
-    use integrations::{dry_run::DryRun, BoxFuture, FirewallError};
-
-    #[derive(Debug)]
-    struct Critical;
-
-    impl Rule for Critical {
-        fn check(&self, call: &ToolCall) -> Option<Finding> {
-            call.args["command"]
-                .as_str()?
-                .contains("EXFIL")
-                .then(|| Finding {
-                    rule: "test.critical".into(),
-                    severity: Severity::Critical,
-                    reason: "test".into(),
-                })
-        }
-    }
-
-    /// Shares one `DryRun` between the test and the state.
-    #[derive(Debug)]
-    struct Shared(Arc<DryRun>);
-
-    impl Firewall for Shared {
-        fn name(&self) -> &'static str {
-            "shared-dry-run"
-        }
-        fn quarantine<'a>(
-            &'a self,
-            host: std::net::IpAddr,
-            reason: &'a str,
-        ) -> BoxFuture<'a, Result<(), FirewallError>> {
-            self.0.quarantine(host, reason)
-        }
-        fn release(&self, host: std::net::IpAddr) -> BoxFuture<'_, Result<(), FirewallError>> {
-            self.0.release(host)
-        }
     }
 
     fn bash(command: &str) -> ToolCall {
@@ -335,33 +388,186 @@ mod tests {
         }
     }
 
+    async fn decide_req(s: &AppState, call: ToolCall) -> Decision {
+        match handle(s.clone(), STRANGER, addr(), Request::Decide { call }).await {
+            Response::Decision { decision } => decision,
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
     #[tokio::test]
-    async fn a_critical_finding_denies_and_quarantines_the_peer() {
+    async fn unpaired_core_denies_and_offers_pairing() {
+        let dir = TempDir::new("api-unpaired");
+        let s = state_with(&dir, Detector::new(), Arc::new(DryRun::default()));
+        assert!(!decide_req(&s, bash("ls")).await.is_allow());
+        assert!(matches!(
+            handle(s.clone(), STRANGER, addr(), Request::PairOffer).await,
+            Response::Offer { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn only_the_paired_witness_reads_the_record() {
+        let dir = TempDir::new("api-witness");
+        let s = state_with(&dir, Detector::new(), Arc::new(DryRun::default()));
+        pair(s.core());
+        assert!(decide_req(&s, bash("ls")).await.is_allow());
+
+        let stranger = handle(s.clone(), STRANGER, addr(), Request::Events { since: None }).await;
+        assert!(matches!(stranger, Response::Error { .. }));
+
+        match handle(s.clone(), WITNESS, addr(), Request::Events { since: None }).await {
+            Response::Events { events } => assert_eq!(events.len(), 2),
+            other => panic!("unexpected {other:?}"),
+        }
+        assert!(matches!(
+            handle(s.clone(), STRANGER, addr(), Request::PairOffer).await,
+            Response::Error { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn configuration_needs_the_witness_and_the_owner_signature() {
+        let dir = TempDir::new("api-config");
+        let s = state_with(&dir, Detector::new(), Arc::new(DryRun::default()));
+        pair(s.core());
+        let config = CoreConfig {
+            name: "lab".into(),
+            firewall: FirewallConfig::DryRun,
+        };
+        let bad = handle(
+            s.clone(),
+            WITNESS,
+            addr(),
+            Request::Configure {
+                config: config.clone(),
+                signature: "00".into(),
+            },
+        )
+        .await;
+        assert!(matches!(bad, Response::Error { .. }));
+        let stranger = handle(
+            s.clone(),
+            STRANGER,
+            addr(),
+            Request::Configure {
+                config,
+                signature: "00".into(),
+            },
+        )
+        .await;
+        assert!(matches!(stranger, Response::Error { .. }));
+    }
+
+    #[derive(Debug)]
+    struct Critical;
+
+    impl Rule for Critical {
+        fn check(&self, call: &ToolCall) -> Option<Finding> {
+            call.args["command"]
+                .as_str()?
+                .contains("CRITICAL")
+                .then(|| Finding {
+                    rule: "test.critical".into(),
+                    severity: Severity::Critical,
+                    reason: "test".into(),
+                })
+        }
+    }
+
+    #[tokio::test]
+    async fn a_critical_finding_quarantines_the_quic_peer() {
         let dir = TempDir::new("api-contain");
         let firewall = Arc::new(DryRun::default());
-        let s = AppState::new(
-            Core::open(&dir.0).unwrap(),
+        let s = state_with(
+            &dir,
             Detector::with_rules(vec![Box::new(Critical)]),
-            Box::new(Shared(Arc::clone(&firewall))),
-            Publisher::none(),
+            firewall.clone(),
         );
-        pair(&s.core);
-        let peer: std::net::IpAddr = "10.0.0.7".parse().unwrap();
-
-        assert!(decide(&s, &bash("ls"), Some(peer)).await.is_allow());
+        pair(s.core());
+        let peer = addr().ip();
+        assert!(decide_req(&s, bash("ls")).await.is_allow());
         assert!(!firewall.is_quarantined(peer));
-
-        let decision = decide(&s, &bash("EXFIL"), Some(peer)).await;
-        assert!(!decision.is_allow());
+        assert!(!decide_req(&s, bash("CRITICAL")).await.is_allow());
         assert!(firewall.is_quarantined(peer));
+    }
 
-        let kinds: Vec<_> = s
-            .core
-            .events_since(None)
-            .unwrap()
-            .into_iter()
-            .map(|e| e.kind)
-            .collect();
-        assert!(kinds.contains(&"containment"));
+    #[tokio::test]
+    async fn the_witness_lists_hosts_and_makes_one_identify_itself() {
+        use edge_net::quic;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let dir = TempDir::new("api-identify");
+        let s = state_with(&dir, Detector::new(), Arc::new(DryRun::default()));
+        pair(s.core());
+
+        // The Core on a real QUIC endpoint.
+        let core_key = s.core().keys().transport_key().clone();
+        let identity = quic::TlsIdentity::from_signing_key(&core_key, "hawk-core").unwrap();
+        let endpoint = quic::server(&identity, "127.0.0.1:0".parse().unwrap()).unwrap();
+        let core_addr = endpoint.local_addr().unwrap();
+        let (hook, served) = (s.clone(), s.clone());
+        tokio::spawn(quic::serve_with(
+            endpoint,
+            move |peer, conn| hook.on_connect(peer, conn),
+            move |peer, from, req| handle(served.clone(), peer, from, req),
+        ));
+
+        // A host daemon: connects, introduces itself, answers identification.
+        let host_key = ed25519_dalek::SigningKey::generate(&mut rand::rngs::OsRng);
+        let host_id = host_key.verifying_key().to_bytes();
+        let client =
+            quic::Client::new(quic::TlsIdentity::from_signing_key(&host_key, "hawk-host").unwrap())
+                .unwrap();
+        let (conn, core_id) = client
+            .connect(core_addr, Some(identity.peer_id))
+            .await
+            .unwrap();
+        let shown = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&shown);
+        tokio::spawn(quic::serve_connection(
+            conn.clone(),
+            core_id,
+            move |_p, _a, req: Request| {
+                let flag = Arc::clone(&flag);
+                async move {
+                    if matches!(req, Request::IdentifySelf { .. }) {
+                        flag.store(true, Ordering::SeqCst);
+                    }
+                    Response::Ack
+                }
+            },
+        ));
+        let hello = Request::HostHello {
+            hostname: "rig-07".into(),
+            os: "linux".into(),
+        };
+        let _: Response = quic::request(&conn, &hello, std::time::Duration::from_secs(5))
+            .await
+            .unwrap();
+
+        let hosts = match handle(s.clone(), WITNESS, addr(), Request::Hosts).await {
+            Response::Hosts { hosts } => hosts,
+            other => panic!("unexpected {other:?}"),
+        };
+        assert_eq!(hosts.len(), 1);
+        assert_eq!(hosts[0].hostname, "rig-07");
+        assert_eq!(hosts[0].fingerprint, quic::fingerprint(&host_id));
+        assert!(hosts[0].connected);
+
+        // A stranger cannot list or identify.
+        assert!(matches!(
+            handle(s.clone(), STRANGER, addr(), Request::Hosts).await,
+            Response::Error { .. }
+        ));
+
+        let identify = Request::Identify {
+            host: hex::encode(host_id),
+        };
+        assert!(matches!(
+            handle(s.clone(), WITNESS, addr(), identify).await,
+            Response::Ack
+        ));
+        assert!(shown.load(Ordering::SeqCst));
     }
 }

@@ -24,8 +24,9 @@ use std::{
 use detect::Verdict;
 use guardian_core::{
     pairing::{confirmation_code, pair_message},
-    seal, CoreKeys, CorePublic, Decision, Event, EventKind, HashChain, Severity, SignedHead,
-    ToolCall,
+    seal,
+    wire::{configure_message, CoreConfig},
+    CoreKeys, CorePublic, Decision, Event, EventKind, HashChain, Severity, SignedHead, ToolCall,
 };
 use p256::ecdsa::{signature::Verifier as _, Signature, VerifyingKey};
 use rand::{rngs::OsRng, RngCore};
@@ -79,6 +80,9 @@ pub struct PairingRecord {
     /// Current weekly epoch public key (X25519), hex.
     pub epoch_public: String,
     pub paired_at_ms: u64,
+    /// Transport identity (Ed25519, hex) of the witness app bound at pairing;
+    /// the only peer the Core serves its record and configuration to.
+    pub witness_id: String,
 }
 
 /// What the phone sends to pair (ADR-0017).
@@ -287,6 +291,35 @@ impl Core {
         &self.public
     }
 
+    /// The witness identity bound at pairing.
+    pub fn witness_id(&self) -> Option<[u8; 32]> {
+        let inner = self.lock().ok()?;
+        match &inner.pairing {
+            Pairing::Paired(record) => hex32(&record.witness_id, "witness").ok(),
+            Pairing::Unpaired { .. } => None,
+        }
+    }
+
+    pub fn keys(&self) -> &CoreKeys {
+        &self.keys
+    }
+
+    /// The owner's configuration, if any (ADR-0024).
+    pub fn config(&self) -> Option<CoreConfig> {
+        serde_json::from_slice(&fs::read(self.dir.join("config.json")).ok()?).ok()
+    }
+
+    /// Stores a configuration signed by the owner. Secrets inside (router
+    /// passwords) stay in a file readable only by the Core's user.
+    pub fn set_config(&self, config: &CoreConfig, signature_hex: &str) -> Result<(), CoreError> {
+        self.verify_owner(&configure_message(config), signature_hex)?;
+        write_private(
+            &self.dir.join("config.json"),
+            &serde_json::to_vec_pretty(config).map_err(|_| CoreError::Corrupt("config"))?,
+        )?;
+        Ok(())
+    }
+
     pub fn is_paired(&self) -> bool {
         self.lock()
             .map(|i| matches!(i.pairing, Pairing::Paired(_)))
@@ -305,7 +338,7 @@ impl Core {
 
     /// Verifies the owner's signature over the offer and activates the Core.
     /// Returns the confirmation code.
-    pub fn pair(&self, request: &PairRequest) -> Result<String, CoreError> {
+    pub fn pair(&self, request: &PairRequest, witness_id: &[u8; 32]) -> Result<String, CoreError> {
         let mut inner = self.lock()?;
         let Pairing::Unpaired { nonce } = &inner.pairing else {
             return Err(CoreError::AlreadyPaired);
@@ -321,7 +354,7 @@ impl Core {
             .and_then(|der| Signature::from_der(&der).ok())
             .ok_or(CoreError::BadPairing("signature not DER"))?;
 
-        let message = pair_message(nonce, &self.public.ed25519);
+        let message = pair_message(nonce, &self.public.ed25519, witness_id);
         owner_key
             .verify(&message, &signature)
             .map_err(|_| CoreError::BadPairing("signature does not verify"))?;
@@ -330,6 +363,7 @@ impl Core {
             owner_public: request.owner_public.clone(),
             epoch_public: request.epoch_public.clone(),
             paired_at_ms: now_ms(),
+            witness_id: hex::encode(witness_id),
         };
         write_private(
             &self.dir.join("pairing.json"),
@@ -476,8 +510,6 @@ impl Core {
     }
 
     /// Checks a signature by the paired owner (DER, hex) over `message`.
-    // Used by host management and containment (PENDIENTES.md).
-    #[allow(dead_code)]
     pub fn verify_owner(&self, message: &[u8], signature_hex: &str) -> Result<(), CoreError> {
         let inner = self.lock()?;
         let Pairing::Paired(record) = &inner.pairing else {
@@ -568,6 +600,9 @@ pub(crate) mod tests {
         }
     }
 
+    /// Transport identity of the test witness.
+    pub const WITNESS: [u8; 32] = [42u8; 32];
+
     /// Pairs `core` the way the phone would; returns the epoch secret.
     pub fn pair(core: &Core) -> [u8; 32] {
         let owner = SigningKey::random(&mut OsRng);
@@ -575,14 +610,18 @@ pub(crate) mod tests {
         let message = pair_message(
             &hex::decode(&offer.nonce).unwrap(),
             &offer.core_public.ed25519,
+            &WITNESS,
         );
         let signature: Signature = owner.sign(&message);
         let epoch_secret = random32();
-        core.pair(&PairRequest {
-            owner_public: hex::encode(owner.verifying_key().to_encoded_point(true).as_bytes()),
-            epoch_public: hex::encode(seal::epoch_public(&epoch_secret)),
-            signature: hex::encode(signature.to_der().as_bytes()),
-        })
+        core.pair(
+            &PairRequest {
+                owner_public: hex::encode(owner.verifying_key().to_encoded_point(true).as_bytes()),
+                epoch_public: hex::encode(seal::epoch_public(&epoch_secret)),
+                signature: hex::encode(signature.to_der().as_bytes()),
+            },
+            &WITNESS,
+        )
         .unwrap();
         epoch_secret
     }
@@ -628,11 +667,14 @@ pub(crate) mod tests {
         let core = Core::open(&dir.0).unwrap();
         let owner = SigningKey::random(&mut OsRng);
         let signature: Signature = owner.sign(b"something else");
-        let result = core.pair(&PairRequest {
-            owner_public: hex::encode(owner.verifying_key().to_encoded_point(true).as_bytes()),
-            epoch_public: hex::encode([9u8; 32]),
-            signature: hex::encode(signature.to_der().as_bytes()),
-        });
+        let result = core.pair(
+            &PairRequest {
+                owner_public: hex::encode(owner.verifying_key().to_encoded_point(true).as_bytes()),
+                epoch_public: hex::encode([9u8; 32]),
+                signature: hex::encode(signature.to_der().as_bytes()),
+            },
+            &WITNESS,
+        );
         assert!(matches!(result, Err(CoreError::BadPairing(_))));
         assert!(!core.is_paired());
     }

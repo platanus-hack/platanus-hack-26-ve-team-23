@@ -11,9 +11,14 @@ mod commands;
 pub fn run() {
     let _ = tracing_subscriber::fmt().try_init();
     let result = tauri::Builder::default()
+        .manage(commands::Link::default())
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
+            commands::discover,
             commands::pair_core,
+            commands::configure_core,
+            commands::identify_host,
+            commands::forget_core,
             commands::dashboard
         ])
         .run(tauri::generate_context!());

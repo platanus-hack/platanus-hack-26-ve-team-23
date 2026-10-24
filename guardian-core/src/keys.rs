@@ -38,6 +38,11 @@ impl CoreKeys {
         }
     }
 
+    /// The Ed25519 key, also the Core's QUIC/TLS identity (ADR-0023).
+    pub fn transport_key(&self) -> &ed25519_dalek::SigningKey {
+        &self.ed
+    }
+
     pub fn public(&self) -> CorePublic {
         let pq_public: EncodedVerifyingKey<MlDsa65> = self.pq.verifying_key().encode();
         CorePublic {
