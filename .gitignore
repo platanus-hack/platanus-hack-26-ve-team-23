@@ -12,3 +12,6 @@ host-daemon-data/
 *.tfstate.*
 .terraform.lock.hcl
 infra/localstack/volume/
+# Filled by the Render build from the GitHub releases (ADR-0032).
+misc/landing/downloads/
+__pycache__/

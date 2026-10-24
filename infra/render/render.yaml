@@ -19,8 +19,14 @@ services:
   - type: web
     name: hawk-landing
     runtime: static
-    buildCommand: ""
+    # Copies the GitHub releases into /downloads/ (ADR-0032); without
+    # GITHUB_TOKEN it publishes the page with no downloads.
+    buildCommand: python3 misc/landing/fetch_downloads.py misc/landing/downloads
     staticPublishPath: ./misc/landing
+    envVars:
+      # Fine-grained token, read-only "Contents" on JEHR037/team23-private.
+      - key: GITHUB_TOKEN
+        sync: false
     buildFilter:
       paths:
         - misc/landing/**

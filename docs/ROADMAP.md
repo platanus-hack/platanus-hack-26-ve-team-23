@@ -25,6 +25,7 @@ What is missing and why: `PENDIENTES.md`.
 | M11 | Results and demo | 0010 | Pending: needs M2, a real `eval` run against the Core, the demo router and the Pi |
 | M12 | Repository clean-up | – | In progress: documentation synced with the code |
 | M13 | Landing page and app redesign | 0013, 0031 | Done in the browser preview: new `witness/ui`, HAWK icons, landing in `misc/landing`; pending the Tauri build on device, publishing the landing and a release for `install.sh` |
+| M14 | CI, releases and downloads | 0032 | Built: CI and release workflows, downloads on the landing; pending the first CI run, the Render token and deploy hook, the first tag and the minisign key |
 
 Critical path for the demo: M2, then M11 (router, Pi, `eval` metrics,
 recorded-session fallback). M10, passkeys, the TPM key, the S3 archive and

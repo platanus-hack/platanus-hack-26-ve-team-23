@@ -27,6 +27,17 @@ Every entry is written when the change is merged, under `Unreleased`.
   part explorer, the real app in a phone frame, design tokens in
   `DESIGN.md`) and the host daemon installer `install.sh` (SHA-256 checked
   download, systemd service under its own user, OpenCode plugin).
+- ADR-0032 and GitHub Actions: `ci.yml` (fmt, clippy as errors, tests,
+  `cargo deny`, i18n audit on every push and pull request) and
+  `release.yml` (on a `v*` tag: host daemon for Linux x86_64/aarch64 and
+  Windows, the Core for the Pi and x86_64, the app as `.deb`, AppImage and
+  Windows installer, an experimental debug APK, `guardian.ts`,
+  `SHA256SUMS` and an optional minisign signature, then a landing redeploy).
+- `misc/landing/fetch_downloads.py`: the Render build copies the releases
+  to `/downloads/`, checks every file against `SHA256SUMS`, and writes an
+  index page; the landing links to it. `install.sh` downloads from there,
+  says "suma" instead of "firma", and verifies a minisign signature once the
+  key exists.
 - `infra/render`: the landing page as the static site `hawk-landing`
   (`https://hawk-landing.onrender.com`, the URL in the install command).
 - `witness/ui`: the app screens rebuilt on the twelve commands of

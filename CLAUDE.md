@@ -110,6 +110,7 @@ Keystore). Crates depend only downwards; `guardian-core` does no I/O.
 | Run the app on the desktop | `just witness` |
 | Review the app design without a Core | open `witness/ui/index.html` in a browser (`?wizard` for the activation) |
 | Docker | `docker compose run --rm check`, `just docker-smoke` |
+| CI and releases (ADR-0032) | `.github/workflows/`; push a tag `vX.Y.Z` equal to the workspace version |
 | Router lab for containment | `docs/LAB.md` (MikroTik CHR 7.x and OpenWrt VMs in Hyper-V) |
 
 - Clippy denies `unwrap`, `expect`, `panic` and `println!` outside tests;

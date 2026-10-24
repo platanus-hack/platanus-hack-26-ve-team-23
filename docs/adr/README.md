@@ -65,6 +65,7 @@ supersedes it; the old one only has its status updated.
 | [0029](0029-daemon-pinning-and-host-enrolment.md) | Daemon pinning and host enrolment approved by the owner | Proposed |
 | [0030](0030-core-keys-in-two-moments.md) | Core keys in two moments: transport at boot, head keys at activation | Proposed |
 | [0031](0031-witness-app-design-and-ui-contract.md) | The owner app's design, information structure and UI contract | Proposed |
+| [0032](0032-ci-releases-and-public-downloads.md) | Continuous integration, releases and public downloads | Proposed |
 
 ## Open questions
 

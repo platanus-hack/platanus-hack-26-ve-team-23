@@ -43,7 +43,12 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-[ -n "$BASE_URL" ] || BASE_URL="https://github.com/JEHR037/team23-private/releases/download/v${VERSION}"
+[ -n "$BASE_URL" ] || BASE_URL="https://hawk-landing.onrender.com/downloads/v${VERSION}"
+
+# minisign public key of the release checksums (ADR-0032). Empty until the
+# team generates the key; then SHA256SUMS.minisig is verified when minisign
+# is installed.
+MINISIGN_PUBKEY=""
 
 BIN_NAME="hawk-host-daemon"
 SERVICE="hawk-host-daemon"
@@ -94,7 +99,7 @@ ARCH="$(uname -m)"
 case "$OS" in
   Linux) ;;
   Darwin) fail "Todavía no hay build para macOS en el release v$VERSION. Corre el daemon en una máquina Linux o pide la build de macOS al equipo." ;;
-  MINGW*|MSYS*|CYGWIN*) fail "En Windows descarga hawk-$VERSION-x86_64-windows.zip del release y corre host-daemon.exe." ;;
+  MINGW*|MSYS*|CYGWIN*) fail "En Windows descarga hawk-$VERSION-x86_64-windows.zip de $BASE_URL/ y corre host-daemon.exe." ;;
   *) fail "Sistema no soportado: $OS." ;;
 esac
 case "$ARCH" in
@@ -122,10 +127,19 @@ say ""
 # Download and verify ---------------------------------------------------------
 step "Descargando $TARBALL"
 fetch "$BASE_URL/$TARBALL" "$TMP/$TARBALL" \
-  || fail "No pude descargar $BASE_URL/$TARBALL. Si el repositorio es privado, el release necesita un enlace público (HAWK_BASE_URL)."
+  || fail "No pude descargar $BASE_URL/$TARBALL. Revisa la versión (--version) o la dirección (--base-url)."
 fetch "$BASE_URL/SHA256SUMS" "$TMP/SHA256SUMS" || fail "No pude descargar SHA256SUMS."
 
-step "Verificando la firma SHA-256"
+if [ -n "$MINISIGN_PUBKEY" ] && have minisign; then
+  step "Verificando la firma de SHA256SUMS"
+  fetch "$BASE_URL/SHA256SUMS.minisig" "$TMP/SHA256SUMS.minisig" || fail "No pude descargar SHA256SUMS.minisig."
+  minisign -Vq -P "$MINISIGN_PUBKEY" -m "$TMP/SHA256SUMS" -x "$TMP/SHA256SUMS.minisig" \
+    || fail "La firma de SHA256SUMS no es válida. No instalo nada."
+elif [ -n "$MINISIGN_PUBKEY" ]; then
+  note "minisign no está instalado: solo compruebo la suma SHA-256, no quién publicó el archivo."
+fi
+
+step "Comprobando la suma SHA-256"
 EXPECTED="$(grep -E "[ *]$TARBALL\$" "$TMP/SHA256SUMS" | cut -d' ' -f1 | head -n1)"
 [ -n "$EXPECTED" ] || fail "$TARBALL no aparece en SHA256SUMS."
 ACTUAL="$(sha "$TMP/$TARBALL")"

@@ -22,7 +22,9 @@ Third-party files: three.js and its addons in `landing/vendor/` (MIT,
 allowed for font files by ADR-0011).
 
 Published on Render as the static site `hawk-landing`
-(`infra/render/render.yaml`, see `infra/README.md`).
+(`infra/render/render.yaml`, see `infra/README.md`). Its build runs
+`fetch_downloads.py`, which copies the GitHub releases into `downloads/`
+(ignored by git) and checks them against `SHA256SUMS` (ADR-0032).
 
 Open items (creating the Render service, the release the installer downloads, signing
 `SHA256SUMS`): `PENDIENTES.md`, section "Landing y app".

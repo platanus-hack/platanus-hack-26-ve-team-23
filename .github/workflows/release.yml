@@ -1,0 +1,242 @@
+# Release: build every downloadable file, attach it to the GitHub release of
+# the tag, and redeploy the landing so it publishes them under /downloads/
+# (ADR-0032). File names are fixed: misc/landing/install.sh depends on them.
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build, for example v0.1.0"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  meta:
+    name: version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - id: v
+        name: The tag must equal the workspace version
+        run: |
+          case "$TAG" in v[0-9]*) ;; *) echo "tag must look like v1.2.3: $TAG"; exit 1 ;; esac
+          version="${TAG#v}"
+          workspace="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n1)"
+          [ "$version" = "$workspace" ] || { echo "tag $TAG but Cargo.toml says $workspace"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  linux:
+    name: daemon and Core (Linux)
+    needs: meta
+    runs-on: ubuntu-24.04
+    env:
+      V: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu
+      # zig is the cross linker; glibc 2.28 runs on Debian 10+, Ubuntu 20.04+
+      # and Raspberry Pi OS bullseye or later.
+      - name: cargo-zigbuild
+        run: pip install --user "cargo-zigbuild==0.19.*"
+      - name: Build
+        run: |
+          cargo zigbuild --release --locked -p host-daemon -p guardian \
+            --target x86_64-unknown-linux-gnu.2.28 \
+            --target aarch64-unknown-linux-gnu.2.28
+      - name: Package
+        run: |
+          mkdir -p dist
+          for arch in x86_64 aarch64; do
+            bin="target/$arch-unknown-linux-gnu/release"
+            d="hawk-$V-$arch-linux"
+            mkdir -p "pkg/$d" "pkg/core/hawk-core-$V-$arch-linux"
+            cp "$bin/host-daemon" "pkg/$d/host-daemon"
+            cp "$bin/guardian" "pkg/core/hawk-core-$V-$arch-linux/guardian"
+            tar -C pkg -czf "dist/$d.tar.gz" "$d"
+            tar -C pkg/core -czf "dist/hawk-core-$V-$arch-linux.tar.gz" "hawk-core-$V-$arch-linux"
+          done
+          ls -l dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*
+
+  windows:
+    name: daemon and app (Windows)
+    needs: meta
+    runs-on: windows-2022
+    env:
+      V: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Host daemon
+        shell: pwsh
+        run: |
+          cargo build --release --locked -p host-daemon
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path target/release/host-daemon.exe -DestinationPath "dist/hawk-$env:V-x86_64-windows.zip"
+      - name: Owner app (NSIS installer)
+        shell: pwsh
+        working-directory: witness
+        run: npx --yes @tauri-apps/cli@2 build --bundles nsis
+      - name: Collect the installer
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem target/release/bundle/nsis -Filter *-setup.exe | Select-Object -First 1
+          if (-not $exe) { throw "no NSIS installer" }
+          Copy-Item $exe.FullName "dist/hawk-witness-$env:V-x86_64-windows-setup.exe"
+          Get-ChildItem dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*
+
+  witness-linux:
+    name: app (Linux)
+    needs: meta
+    runs-on: ubuntu-22.04
+    env:
+      V: ${{ needs.meta.outputs.version }}
+      APPIMAGE_EXTRACT_AND_RUN: "1"
+      NO_STRIP: "true"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: System libraries for Tauri
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev libxdo-dev patchelf file
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build .deb and AppImage
+        working-directory: witness
+        run: npx --yes @tauri-apps/cli@2 build --bundles deb,appimage
+      - name: Collect
+        run: |
+          mkdir -p dist
+          cp target/release/bundle/deb/*.deb "dist/hawk-witness-$V-amd64.deb"
+          cp target/release/bundle/appimage/*.AppImage "dist/hawk-witness-$V-x86_64.AppImage"
+          ls -l dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: witness-linux
+          path: dist/*
+
+  android:
+    name: app (Android, experimental)
+    needs: meta
+    runs-on: ubuntu-24.04
+    # A debug-signed APK until the release keystore exists; it never blocks
+    # the release.
+    continue-on-error: true
+    env:
+      V: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android
+      - name: Build the APK
+        working-directory: witness
+        run: |
+          export NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          npx --yes @tauri-apps/cli@2 android init --ci
+          npx --yes @tauri-apps/cli@2 android build --apk --debug
+      - name: Collect
+        run: |
+          mkdir -p dist
+          apk="$(find witness/gen/android -name '*.apk' -path '*universal*' | head -n1)"
+          [ -n "$apk" ] || apk="$(find witness/gen/android -name '*.apk' | head -n1)"
+          [ -n "$apk" ] || { echo "no APK"; exit 1; }
+          cp "$apk" "dist/hawk-witness-$V-android-debug.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: dist/*
+
+  publish:
+    name: publish
+    needs: [meta, linux, windows, witness-linux, android]
+    if: ${{ !cancelled() && needs.linux.result == 'success' && needs.windows.result == 'success' && needs.witness-linux.result == 'success' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      V: ${{ needs.meta.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+      RENDER_DEPLOY_HOOK_LANDING: ${{ secrets.RENDER_DEPLOY_HOOK_LANDING }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Plugin and checksums
+        run: |
+          cp agent-hook/guardian.ts dist/guardian.ts
+          cd dist
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+      - name: Sign the checksums (when the key exists)
+        run: |
+          if [ -z "$MINISIGN_SECRET_KEY" ]; then
+            echo "MINISIGN_SECRET_KEY not set: publishing checksums without a signature"
+            exit 0
+          fi
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends minisign
+          umask 077
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > "$RUNNER_TEMP/minisign.key"
+          minisign -S -s "$RUNNER_TEMP/minisign.key" -m dist/SHA256SUMS -t "hawk $V"
+          rm -f "$RUNNER_TEMP/minisign.key"
+      - name: GitHub release
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --verify-tag --prerelease --title "HAWK $V" \
+              --notes "Downloads: https://hawk-landing.onrender.com/downloads/ . Checksums in SHA256SUMS."
+          fi
+          gh release upload "$TAG" dist/* --clobber
+      - name: Redeploy the landing (publishes /downloads/)
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_LANDING" ]; then
+            echo "RENDER_DEPLOY_HOOK_LANDING not set: redeploy the landing by hand"
+            exit 0
+          fi
+          curl -fsS -X POST "$RENDER_DEPLOY_HOOK_LANDING" > /dev/null
+          echo "landing redeploy requested"

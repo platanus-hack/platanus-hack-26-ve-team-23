@@ -26,7 +26,10 @@ The same Blueprint publishes `misc/landing` as the static site
 `hawk-landing` (free plan, rebuilt only when `misc/landing` changes) at
 `https://hawk-landing.onrender.com`, which is the URL in the landing's
 install command. `install.sh` is served as `text/plain` so it can be read in
-a browser before it is piped to `sh`. The landing is not part of HAWK: the
+a browser before it is piped to `sh`. Its build runs
+`misc/landing/fetch_downloads.py`, which needs the service variable
+`GITHUB_TOKEN` (fine-grained, read-only Contents on this repository) to copy
+the releases into `/downloads/` (ADR-0032). The landing is not part of HAWK: the
 Core, the daemons and the app never contact it.
 
 ## Option A: Render (RustFS)

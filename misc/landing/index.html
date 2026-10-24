@@ -243,6 +243,8 @@ code { font-family: var(--mono); font-size: .86em; font-variant-ligatures: none;
 .steps li::before { content: counter(s); display: block; font-weight: 700; font-size: clamp(40px, 4vw, 56px); line-height: 1; font-variation-settings: "wdth" 120; margin-bottom: 14px; }
 .steps p { max-width: 22rem; }
 .steps strong { display: block; font-weight: 650; font-size: 20px; margin-bottom: 4px; }
+.downloads { margin: clamp(32px, 4vw, 48px) 0 0; color: var(--night-ink-2); }
+.downloads a { color: var(--night-ink); font-weight: 600; }
 
 /* How it connects: a diagram ------------------------------------------------ */
 .net-diagram { display: block; width: 100%; height: auto; }
@@ -560,6 +562,7 @@ footer { padding: var(--gap-section) 0 40px; }
         <li data-r><strong>Abre la app HAWK</strong><p>Encuentra la placa sola. Compara los seis dígitos y empareja.</p></li>
         <li data-r><strong>Vuelve a trabajar</strong><p>Desde ahora, cada acción del agente pasa primero por HAWK.</p></li>
       </ol>
+      <p class="downloads" data-r>¿Windows, la app de escritorio o el Core para la Pi? <a href="downloads/">Todas las descargas</a></p>
     </div>
   </section>
 
