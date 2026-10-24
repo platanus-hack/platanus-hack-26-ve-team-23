@@ -5,12 +5,58 @@ use serde::{Deserialize, Serialize};
 
 use crate::{keys::CorePublic, Decision, SignedHead, ToolCall};
 
-/// What the owner can configure from the app (ADR-0024). Signed by the owner
-/// over `configure_message(&config)`.
+/// The Core's configuration (ADR-0024, ADR-0027). Each configuration is one
+/// link of a chain: it names its `version` (the previous one plus one) and
+/// the hash of the previous configuration, and the signature covers both, so
+/// an old configuration can never be replayed and history cannot fork.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CoreConfig {
     pub name: String,
     pub firewall: FirewallConfig,
+    /// 1 for the first configuration, previous + 1 for every change.
+    #[serde(default)]
+    pub version: u64,
+    /// `config_hash` (hex) of the previous configuration; empty for version 1.
+    #[serde(default)]
+    pub prev: String,
+    /// Enterprise edition (ADR-0027): P-256 public key (SEC1, hex) allowed to
+    /// sign configurations the Core fetches remotely. Only the owner can set,
+    /// change or remove it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enterprise_signer: Option<String>,
+}
+
+impl CoreConfig {
+    /// Whether any router secret travels in this configuration. Remote
+    /// (enterprise) configurations must not carry secrets in clear text.
+    pub fn has_secrets(&self) -> bool {
+        match &self.firewall {
+            FirewallConfig::DryRun => false,
+            FirewallConfig::Mikrotik { password, .. }
+            | FirewallConfig::Openwrt { password, .. } => !password.is_empty(),
+        }
+    }
+}
+
+/// A configuration with its signature, as an enterprise pipeline publishes it
+/// for the Core to fetch (ADR-0027).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignedConfig {
+    pub config: CoreConfig,
+    /// ECDSA P-256 (DER, hex) over `configure_message(&config)`.
+    pub signature: String,
+}
+
+pub const CONFIG_HASH_DOMAIN: &[u8] = b"guardian.config.v1";
+
+/// Hash that links one configuration to the next (hex in `CoreConfig.prev`).
+pub fn config_hash(config: &CoreConfig) -> [u8; 32] {
+    use sha2::{Digest as _, Sha256};
+    Sha256::new()
+        .chain_update(CONFIG_HASH_DOMAIN)
+        .chain_update(serde_json::to_vec(config).unwrap_or_default())
+        .finalize()
+        .into()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,6 +93,20 @@ impl FirewallConfig {
 pub struct ConfigSummary {
     pub name: String,
     pub firewall: String,
+    /// Position of the active configuration in the chain.
+    #[serde(default)]
+    pub version: u64,
+    /// `config_hash` (hex) of the active configuration: the next one must name
+    /// it as `prev`.
+    #[serde(default)]
+    pub hash: String,
+    /// Whether remote (enterprise) configuration is authorised.
+    #[serde(default)]
+    pub enterprise: bool,
+    /// The authorised enterprise signer (public key, hex), so the owner's app
+    /// can keep it when it writes the next configuration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enterprise_signer: Option<String>,
 }
 
 pub const CONFIGURE_DOMAIN: &[u8] = b"guardian.configure.v1";
@@ -184,10 +244,38 @@ mod tests {
         let a = CoreConfig {
             name: "lab".into(),
             firewall: FirewallConfig::DryRun,
+            version: 1,
+            prev: String::new(),
+            enterprise_signer: None,
         };
         let mut b = a.clone();
         assert_eq!(configure_message(&a), configure_message(&b));
         b.name = "other".into();
         assert_ne!(configure_message(&a), configure_message(&b));
+    }
+
+    #[test]
+    fn the_hash_binds_version_and_previous_link() {
+        let first = CoreConfig {
+            name: "lab".into(),
+            firewall: FirewallConfig::DryRun,
+            version: 1,
+            prev: String::new(),
+            enterprise_signer: None,
+        };
+        let mut second = first.clone();
+        second.version = 2;
+        second.prev = hex::encode(config_hash(&first));
+        assert_ne!(config_hash(&first), config_hash(&second));
+        assert_ne!(configure_message(&first), configure_message(&second));
+    }
+
+    #[test]
+    fn older_configurations_without_chain_fields_still_parse() {
+        let old: CoreConfig =
+            serde_json::from_str(r#"{"name":"lab","firewall":{"kind":"dry_run"}}"#).unwrap();
+        assert_eq!(old.version, 0);
+        assert!(old.prev.is_empty());
+        assert!(!old.has_secrets());
     }
 }

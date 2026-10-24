@@ -16,6 +16,16 @@ Every entry is written when the change is merged, under `Unreleased`.
 - `integrations::archive`: background uploader (SigV4 by `rusty-s3`,
   signed `Content-MD5`), enabled with `ARCHIVE_*`; never blocks decisions.
 - `infra/aws` (OpenTofu) and `infra/localstack` for the demo's cloud PC.
+- ADR-0027: offline by default, optional cloud features for any owner. The
+  configuration becomes a chain (`version`, `prev`, signature over both):
+  no rollback, no skipping, no forks; every change recorded in the main
+  chain. Optional enterprise signer authorised only by the owner, remote
+  configuration fetched from S3 with alerts on rollback or fork, and
+  `guardian config-keygen` / `config-sign` for pipelines.
+- `infra/aws` gains `target` (aws, localstack, s3) and publishes the signed
+  configuration; `infra/render` deploys RustFS with Object Lock on Render.
+- `docs/ENTRENAMIENTO-GRANITE.md`: how to build or fine-tune the classifier,
+  with the reading list.
 
 - ADR-0023 and ADR-0024: QUIC with mutual TLS between all our edges (the
   Core has no HTTP endpoint) and discovery with an activation wizard.

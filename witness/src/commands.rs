@@ -364,15 +364,25 @@ pub async fn configure_core(
     firewall: FirewallConfig,
 ) -> Result<String, String> {
     let dir = data_dir(&app)?;
+    let conn = connect(&dir, &link).await?;
+    // The next link of the configuration chain (ADR-0027): the active
+    // version plus one, naming the active configuration's hash, and keeping
+    // the enterprise signer the owner authorised, if any.
+    let active = match call(&conn, &Request::Hello).await? {
+        Response::Hello { config, .. } => config,
+        other => return Err(format!("unexpected answer: {other:?}")),
+    };
     let config = CoreConfig {
         name: name.trim().chars().take(48).collect(),
         firewall,
+        version: active.as_ref().map_or(1, |c| c.version + 1),
+        prev: active.as_ref().map(|c| c.hash.clone()).unwrap_or_default(),
+        enterprise_signer: active.and_then(|c| c.enterprise_signer),
     };
     if config.name.is_empty() {
         return Err("give the Core a name".into());
     }
     let signature: Signature = owner_key(&dir)?.sign(&configure_message(&config));
-    let conn = connect(&dir, &link).await?;
     let request = Request::Configure {
         config,
         signature: hex::encode(signature.to_der().as_bytes()),

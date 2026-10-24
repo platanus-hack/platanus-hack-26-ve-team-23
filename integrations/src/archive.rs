@@ -98,7 +98,7 @@ fn client() -> HttpsClient {
     Client::builder(hyper_util::rt::TokioExecutor::new()).build(connector)
 }
 
-struct Store {
+pub(crate) struct Store {
     bucket: Bucket,
     credentials: Credentials,
     prefix: String,
@@ -106,7 +106,7 @@ struct Store {
 }
 
 impl Store {
-    fn new(config: &ArchiveConfig) -> Result<Self, String> {
+    pub(crate) fn new(config: &ArchiveConfig) -> Result<Self, String> {
         let endpoint = config
             .endpoint
             .parse()
@@ -127,7 +127,45 @@ impl Store {
         })
     }
 
-    async fn put(&self, key: &str, body: &[u8]) -> Result<(), String> {
+    /// Reads `key` (under no prefix). `Ok(None)` when it does not exist.
+    pub(crate) async fn get(&self, key: &str, max_bytes: usize) -> Result<Option<Vec<u8>>, String> {
+        let action = rusty_s3::actions::GetObject::new(&self.bucket, Some(&self.credentials), key);
+        let url = action.sign(PRESIGN_FOR);
+        let request = Request::get(url.as_str())
+            .body(Full::new(Bytes::new()))
+            .map_err(|e| e.to_string())?;
+        let call = async {
+            let response = self
+                .http
+                .request(request)
+                .await
+                .map_err(|e| e.to_string())?;
+            let status = response.status();
+            if status == hyper::StatusCode::NOT_FOUND {
+                return Ok(None);
+            }
+            let body = Limited::new(response.into_body(), max_bytes)
+                .collect()
+                .await
+                .map_err(|e| e.to_string())?
+                .to_bytes();
+            if !status.is_success() {
+                return Err(format!(
+                    "{status}: {}",
+                    String::from_utf8_lossy(&body)
+                        .chars()
+                        .take(300)
+                        .collect::<String>()
+                ));
+            }
+            Ok(Some(body.to_vec()))
+        };
+        tokio::time::timeout(TIMEOUT, call)
+            .await
+            .map_err(|_| "timed out".to_owned())?
+    }
+
+    pub(crate) async fn put(&self, key: &str, body: &[u8]) -> Result<(), String> {
         let md5 = base64::engine::general_purpose::STANDARD.encode(Md5::digest(body));
         let mut action =
             rusty_s3::actions::PutObject::new(&self.bucket, Some(&self.credentials), key);

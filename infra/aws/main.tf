@@ -1,12 +1,18 @@
-# Off-site archive of the Core's sealed batches (ADR-0026).
+# Enterprise edition, optional (ADR-0026, ADR-0027): off-site archive of the
+# Core's sealed batches and the store for its remote configuration.
 #
-# A bucket with Object Lock in compliance mode (nobody, not even the account
-# root, can delete or overwrite an object during the retention period), a
-# dedicated KMS key, TLS-only access, and a credential that can only put
-# objects under the Core's prefix.
+# One module, three targets:
+#   target = "aws"        real AWS: bucket, Object Lock, KMS, TLS-only policy,
+#                         lifecycle, put-only and read-config credentials
+#   target = "localstack" the demo PC running infra/localstack
+#   target = "s3"         any S3-compatible store with Object Lock, such as
+#                         RustFS on Render (infra/render): bucket + lock only
 #
-# Real AWS:   tofu init && tofu apply
-# LocalStack: tofu init && tofu apply -var localstack_endpoint=http://<pc>:4566
+#   tofu init
+#   tofu apply                                                   # AWS
+#   tofu apply -var target=localstack -var endpoint=http://<pc>:4566
+#   tofu apply -var target=s3 -var endpoint=https://<service>.onrender.com \
+#              -var access_key=... -var secret_key=...           # Render
 
 terraform {
   required_version = ">= 1.6"
@@ -16,6 +22,33 @@ terraform {
       version = "~> 5.0"
     }
   }
+}
+
+variable "target" {
+  type    = string
+  default = "aws"
+  validation {
+    condition     = contains(["aws", "localstack", "s3"], var.target)
+    error_message = "target must be aws, localstack or s3."
+  }
+}
+
+variable "endpoint" {
+  type        = string
+  description = "S3 endpoint for localstack or s3 targets."
+  default     = ""
+}
+
+variable "access_key" {
+  type      = string
+  default   = "test"
+  sensitive = true
+}
+
+variable "secret_key" {
+  type      = string
+  default   = "test"
+  sensitive = true
 }
 
 variable "region" {
@@ -36,46 +69,43 @@ variable "prefix" {
 
 variable "retention_days" {
   type        = number
-  description = "Compliance-mode retention: objects cannot be deleted or overwritten before this."
+  description = "Compliance-mode retention: no object can be deleted or overwritten before this."
   default     = 90
 }
 
-variable "localstack_endpoint" {
+variable "signed_config_file" {
   type        = string
-  description = "Set to LocalStack's URL (for example http://192.168.88.40:4566) to target the demo PC instead of AWS."
+  description = "Optional: a SignedConfig from `guardian config-sign`, published as config/latest.json."
   default     = ""
 }
 
 locals {
-  local = var.localstack_endpoint != ""
+  aws       = var.target == "aws"
+  emulated  = var.target == "localstack"
+  custom    = var.target != "aws"
+  with_iam  = var.target != "s3" # AWS and LocalStack have KMS and IAM
 }
 
 provider "aws" {
   region = var.region
 
-  # Only when targeting LocalStack: dummy credentials, path-style S3 and every
-  # used service pointed at the emulator.
-  access_key                  = local.local ? "test" : null
-  secret_key                  = local.local ? "test" : null
-  skip_credentials_validation = local.local
-  skip_metadata_api_check     = local.local
-  skip_requesting_account_id  = local.local
-  s3_use_path_style           = local.local
+  access_key                  = local.custom ? var.access_key : null
+  secret_key                  = local.custom ? var.secret_key : null
+  skip_credentials_validation = local.custom
+  skip_metadata_api_check     = local.custom
+  skip_requesting_account_id  = local.custom
+  skip_region_validation      = local.custom
+  s3_use_path_style           = local.custom
 
   dynamic "endpoints" {
-    for_each = local.local ? [1] : []
+    for_each = local.custom ? [1] : []
     content {
-      s3  = var.localstack_endpoint
-      kms = var.localstack_endpoint
-      iam = var.localstack_endpoint
-      sts = var.localstack_endpoint
+      s3  = var.endpoint
+      kms = var.endpoint
+      iam = var.endpoint
+      sts = var.endpoint
     }
   }
-}
-
-resource "aws_kms_key" "archive" {
-  description         = "HAWK archive (batches are already sealed to the owner; this is a second layer)"
-  enable_key_rotation = true
 }
 
 resource "aws_s3_bucket" "archive" {
@@ -101,18 +131,28 @@ resource "aws_s3_bucket_object_lock_configuration" "archive" {
   depends_on = [aws_s3_bucket_versioning.archive]
 }
 
+# ---- AWS and LocalStack only ---------------------------------------------
+
+resource "aws_kms_key" "archive" {
+  count               = local.with_iam ? 1 : 0
+  description         = "HAWK archive (batches are already sealed to the owner; this is a second layer)"
+  enable_key_rotation = true
+}
+
 resource "aws_s3_bucket_server_side_encryption_configuration" "archive" {
+  count  = local.with_iam ? 1 : 0
   bucket = aws_s3_bucket.archive.id
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm     = "aws:kms"
-      kms_master_key_id = aws_kms_key.archive.arn
+      kms_master_key_id = aws_kms_key.archive[0].arn
     }
     bucket_key_enabled = true
   }
 }
 
 resource "aws_s3_bucket_public_access_block" "archive" {
+  count                   = local.with_iam ? 1 : 0
   bucket                  = aws_s3_bucket.archive.id
   block_public_acls       = true
   block_public_policy     = true
@@ -120,12 +160,54 @@ resource "aws_s3_bucket_public_access_block" "archive" {
   restrict_public_buckets = true
 }
 
+resource "aws_iam_user" "core" {
+  count = local.with_iam ? 1 : 0
+  name  = "hawk-core"
+}
+
+# Put-only on the archive prefix; read-only on the configuration document.
+resource "aws_iam_user_policy" "core" {
+  count = local.with_iam ? 1 : 0
+  name  = "archive-put-config-read"
+  user  = aws_iam_user.core[0].name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["s3:PutObject"]
+        Resource = "${aws_s3_bucket.archive.arn}/${var.prefix}/*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:GetObject"]
+        Resource = "${aws_s3_bucket.archive.arn}/config/latest.json"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["kms:GenerateDataKey", "kms:Encrypt", "kms:Decrypt"]
+        Resource = aws_kms_key.archive[0].arn
+      },
+    ]
+  })
+}
+
+resource "aws_iam_access_key" "core" {
+  count = local.with_iam ? 1 : 0
+  user  = aws_iam_user.core[0].name
+}
+
+# ---- AWS only ------------------------------------------------------------
+
 resource "aws_s3_bucket_lifecycle_configuration" "archive" {
+  count  = local.aws ? 1 : 0
   bucket = aws_s3_bucket.archive.id
   rule {
     id     = "archive-class"
     status = "Enabled"
-    filter {}
+    filter {
+      prefix = "${var.prefix}/"
+    }
     transition {
       days          = 30
       storage_class = "GLACIER_IR"
@@ -133,7 +215,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "archive" {
   }
 }
 
-resource "aws_s3_bucket_policy" "archive" {
+resource "aws_s3_bucket_policy" "tls_only" {
+  count  = local.aws ? 1 : 0
   bucket = aws_s3_bucket.archive.id
   policy = jsonencode({
     Version = "2012-10-17"
@@ -146,50 +229,35 @@ resource "aws_s3_bucket_policy" "archive" {
       Condition = { Bool = { "aws:SecureTransport" = "false" } }
     }]
   })
-  # LocalStack is reached over plain HTTP in the demo, so the TLS-only policy
-  # is applied on real AWS only.
-  count = local.local ? 0 : 1
 }
 
-# The Core's credential: put objects under its prefix, nothing else. No read,
-# no list, no delete. (Later: IAM Roles Anywhere, so no long-lived key on the Pi.)
-resource "aws_iam_user" "core" {
-  name = "hawk-core-archiver"
-}
+# ---- Remote configuration (ADR-0027), optional ------------------------------
 
-resource "aws_iam_user_policy" "core" {
-  name = "put-only"
-  user = aws_iam_user.core.name
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = ["s3:PutObject"]
-        Resource = "${aws_s3_bucket.archive.arn}/${var.prefix}/*"
-      },
-      {
-        Effect   = "Allow"
-        Action   = ["kms:GenerateDataKey", "kms:Encrypt"]
-        Resource = aws_kms_key.archive.arn
-      },
-    ]
-  })
-}
-
-resource "aws_iam_access_key" "core" {
-  user = aws_iam_user.core.name
+# Each apply with a new file writes a new, locked version of the object; the
+# Core accepts it only if it is the next link of its configuration chain.
+resource "aws_s3_object" "config_latest" {
+  count        = var.signed_config_file != "" ? 1 : 0
+  bucket       = aws_s3_bucket.archive.id
+  key          = "config/latest.json"
+  source       = var.signed_config_file
+  etag         = filemd5(var.signed_config_file)
+  content_type = "application/json"
+  depends_on   = [aws_s3_bucket_object_lock_configuration.archive]
 }
 
 output "core_environment" {
-  description = "Environment for the Core (ARCHIVE_*)."
+  description = "Environment for the Core (ARCHIVE_* and CONFIG_*). On the s3 target, use credentials created in the store for the Core."
   sensitive   = true
   value = {
-    ARCHIVE_ENDPOINT   = local.local ? var.localstack_endpoint : "https://s3.${var.region}.amazonaws.com"
+    ARCHIVE_ENDPOINT   = local.custom ? var.endpoint : "https://s3.${var.region}.amazonaws.com"
     ARCHIVE_REGION     = var.region
     ARCHIVE_BUCKET     = aws_s3_bucket.archive.bucket
     ARCHIVE_PREFIX     = var.prefix
-    ARCHIVE_ACCESS_KEY = aws_iam_access_key.core.id
-    ARCHIVE_SECRET_KEY = aws_iam_access_key.core.secret
+    ARCHIVE_ACCESS_KEY = local.with_iam ? aws_iam_access_key.core[0].id : var.access_key
+    ARCHIVE_SECRET_KEY = local.with_iam ? aws_iam_access_key.core[0].secret : var.secret_key
+    CONFIG_REMOTE      = "1"
+    CONFIG_KEY         = "config/latest.json"
+    CONFIG_ACCESS_KEY  = local.with_iam ? aws_iam_access_key.core[0].id : var.access_key
+    CONFIG_SECRET_KEY  = local.with_iam ? aws_iam_access_key.core[0].secret : var.secret_key
   }
 }

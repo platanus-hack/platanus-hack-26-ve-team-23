@@ -60,6 +60,7 @@ supersedes it; the old one only has its status updated.
 | [0024](0024-discovery-and-activation-wizard.md) | Discovery on the local network and an activation wizard | Proposed |
 | [0025](0025-merkle-tree-per-batch.md) | A Merkle tree per batch, its root inside every signed head | Proposed |
 | [0026](0026-off-site-archive-in-s3-object-lock.md) | Off-site archive of sealed batches in S3 with Object Lock | Proposed |
+| [0027](0027-editions-offline-first-and-enterprise.md) | Offline first, optional cloud features for any owner; a configuration chain without rollback | Proposed |
 
 ## Open questions
 

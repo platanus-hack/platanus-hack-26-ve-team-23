@@ -68,6 +68,13 @@ team approves them.
   No finding and a low score: allow.
 - **The Core never runs on the monitored machine** and never loads a model of
   1.5B parameters or more (ADR-0003, ADR-0005).
+- **Offline first** (ADR-0027): the Core, the daemons and the app work with
+  no cloud and no internet. Every cloud feature (archive, remote
+  configuration) is optional, available to any owner, and the Core keeps
+  working if the cloud is unreachable.
+- **Configuration is a chain**: the next configuration is exactly the active
+  version plus one and names the active hash; never accept a rollback, a
+  skip or a fork. Only the owner can change the enterprise signer.
 - **No blockchain** (ADR-0006). Integrity is the local hash chain plus heads
   signed with Ed25519 and ML-DSA-65 (ADR-0019), verified by the app against
   the pinned identity.

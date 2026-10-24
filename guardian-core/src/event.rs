@@ -17,6 +17,7 @@ pub enum EventKind {
     Paired = 7,
     Contained = 8,
     Released = 9,
+    Configured = 10,
 }
 
 impl EventKind {
@@ -31,6 +32,7 @@ impl EventKind {
             7 => Self::Paired,
             8 => Self::Contained,
             9 => Self::Released,
+            10 => Self::Configured,
             _ => return None,
         })
     }

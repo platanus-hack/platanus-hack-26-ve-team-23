@@ -26,7 +26,7 @@ use guardian_core::{
     merkle,
     pairing::{confirmation_code, pair_message},
     seal,
-    wire::{configure_message, CoreConfig},
+    wire::{config_hash, configure_message, ConfigSummary, CoreConfig},
     CoreKeys, CorePublic, Decision, Event, EventKind, HashChain, Severity, SignedHead, ToolCall,
 };
 use integrations::archive::ArchiveBatch;
@@ -46,6 +46,7 @@ pub enum CoreError {
     NotPaired,
     AlreadyPaired,
     BadPairing(&'static str),
+    BadConfig(String),
 }
 
 impl From<io::Error> for CoreError {
@@ -62,6 +63,7 @@ impl std::fmt::Display for CoreError {
             Self::NotPaired => write!(f, "core not paired"),
             Self::AlreadyPaired => write!(f, "core already paired"),
             Self::BadPairing(why) => write!(f, "pairing rejected: {why}"),
+            Self::BadConfig(why) => write!(f, "configuration rejected: {why}"),
         }
     }
 }
@@ -252,6 +254,50 @@ fn load_heads(path: &Path) -> Result<Vec<SignedHead>, CoreError> {
         .collect()
 }
 
+/// Who signed a configuration (ADR-0027).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfigSource {
+    /// The owner, from the paired app.
+    Owner,
+    /// The enterprise signer the owner authorised, fetched remotely.
+    Enterprise,
+}
+
+impl ConfigSource {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Owner => "owner",
+            Self::Enterprise => "enterprise",
+        }
+    }
+}
+
+/// What the Core reports about a configuration: no secrets.
+pub fn summary(config: &CoreConfig) -> ConfigSummary {
+    ConfigSummary {
+        name: config.name.clone(),
+        firewall: config.firewall.kind().to_owned(),
+        version: config.version,
+        hash: hex::encode(config_hash(config)),
+        enterprise: config.enterprise_signer.is_some(),
+        enterprise_signer: config.enterprise_signer.clone(),
+    }
+}
+
+/// Checks an ECDSA P-256 signature (DER, hex) by `public_hex` (SEC1).
+fn verify_p256(public_hex: &str, message: &[u8], signature_hex: &str) -> Result<(), CoreError> {
+    let key = hex::decode(public_hex)
+        .ok()
+        .and_then(|b| VerifyingKey::from_sec1_bytes(&b).ok())
+        .ok_or_else(|| CoreError::BadConfig("enterprise signer is not a P-256 key".into()))?;
+    let signature = hex::decode(signature_hex)
+        .ok()
+        .and_then(|der| Signature::from_der(&der).ok())
+        .ok_or_else(|| CoreError::BadConfig("signature not DER".into()))?;
+    key.verify(message, &signature)
+        .map_err(|_| CoreError::BadConfig("signature does not verify".into()))
+}
+
 impl Core {
     pub fn open(dir: impl Into<PathBuf>) -> Result<Self, CoreError> {
         let dir = dir.into();
@@ -326,15 +372,100 @@ impl Core {
         serde_json::from_slice(&fs::read(self.dir.join("config.json")).ok()?).ok()
     }
 
-    /// Stores a configuration signed by the owner. Secrets inside (router
-    /// passwords) stay in a file readable only by the Core's user.
-    pub fn set_config(&self, config: &CoreConfig, signature_hex: &str) -> Result<(), CoreError> {
-        self.verify_owner(&configure_message(config), signature_hex)?;
+    /// Applies the next configuration of the chain (ADR-0027).
+    ///
+    /// - The owner signs from the app; an enterprise signer, if the owner
+    ///   authorised one, signs configurations fetched remotely.
+    /// - `version` must be exactly the active one plus one, and `prev` the
+    ///   hash of the active configuration: an old configuration can never be
+    ///   replayed and history cannot fork.
+    /// - Only the owner can set, change or remove the enterprise signer, and a
+    ///   remote configuration must not carry router secrets in clear text.
+    ///
+    /// Every applied configuration is appended to `config-chain.jsonl` and
+    /// recorded as a `Configured` event in the main chain.
+    pub fn apply_config(
+        &self,
+        config: &CoreConfig,
+        signature_hex: &str,
+        source: ConfigSource,
+    ) -> Result<ConfigSummary, CoreError> {
+        let current = self.config();
+        let message = configure_message(config);
+        match source {
+            ConfigSource::Owner => self.verify_owner(&message, signature_hex)?,
+            ConfigSource::Enterprise => {
+                let signer = current
+                    .as_ref()
+                    .and_then(|c| c.enterprise_signer.clone())
+                    .ok_or_else(|| {
+                        CoreError::BadConfig("remote configuration is not authorised".into())
+                    })?;
+                verify_p256(&signer, &message, signature_hex)?;
+                if config.enterprise_signer.as_deref() != Some(signer.as_str()) {
+                    return Err(CoreError::BadConfig(
+                        "only the owner can change the enterprise signer".into(),
+                    ));
+                }
+                if config.has_secrets() {
+                    return Err(CoreError::BadConfig(
+                        "a remote configuration must not carry router secrets".into(),
+                    ));
+                }
+            }
+        }
+        let expected_version = current.as_ref().map_or(1, |c| c.version + 1);
+        if config.version != expected_version {
+            return Err(CoreError::BadConfig(format!(
+                "version {} given, {expected_version} expected (no rollback, no skipping)",
+                config.version
+            )));
+        }
+        let expected_prev = current
+            .as_ref()
+            .map(|c| hex::encode(config_hash(c)))
+            .unwrap_or_default();
+        if config.prev != expected_prev {
+            return Err(CoreError::BadConfig(
+                "it does not follow the active configuration".into(),
+            ));
+        }
+
         write_private(
             &self.dir.join("config.json"),
             &serde_json::to_vec_pretty(config).map_err(|_| CoreError::Corrupt("config"))?,
         )?;
-        Ok(())
+        let link = serde_json::json!({
+            "version": config.version,
+            "hash": hex::encode(config_hash(config)),
+            "prev": config.prev,
+            "source": source.name(),
+            "signature": signature_hex,
+            "applied_at_ms": now_ms(),
+        });
+        let mut line = serde_json::to_vec(&link).map_err(|_| CoreError::Corrupt("config chain"))?;
+        line.push(b'\n');
+        OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(self.dir.join("config-chain.jsonl"))?
+            .write_all(&line)?;
+
+        let summary = summary(config);
+        let meta = EventMeta {
+            kind: "configured",
+            reason: Some(format!(
+                "configuration v{} by {} ({})",
+                config.version,
+                source.name(),
+                summary.firewall
+            )),
+            ..EventMeta::empty()
+        };
+        // The sealed content never includes secrets.
+        let content = serde_json::json!({ "summary": summary, "source": source.name() });
+        self.record(EventKind::Configured, meta, &content, true)?;
+        Ok(summary)
     }
 
     pub fn is_paired(&self) -> bool {
@@ -504,8 +635,6 @@ impl Core {
     /// Records any other event (alerts, containment): `content` is sealed to
     /// the epoch key like every payload, `meta` is what the dashboard and the
     /// sinks see.
-    // Used by host management and containment (PENDIENTES.md).
-    #[allow(dead_code)]
     pub fn record(
         &self,
         kind: EventKind,
@@ -621,6 +750,11 @@ pub(crate) mod tests {
 
     /// Pairs `core` the way the phone would; returns the epoch secret.
     pub fn pair(core: &Core) -> [u8; 32] {
+        pair_with_owner(core).0
+    }
+
+    /// Like `pair`, and also returns the owner's signing key.
+    pub fn pair_with_owner(core: &Core) -> ([u8; 32], SigningKey) {
         let owner = SigningKey::random(&mut OsRng);
         let offer = core.pair_offer().unwrap();
         let message = pair_message(
@@ -639,7 +773,7 @@ pub(crate) mod tests {
             &WITNESS,
         )
         .unwrap();
-        epoch_secret
+        (epoch_secret, owner)
     }
 
     fn call() -> ToolCall {
@@ -786,5 +920,135 @@ pub(crate) mod tests {
             .unwrap();
         let last = core.heads_since(None).unwrap().pop().unwrap();
         assert_eq!(last.first_seq, next);
+    }
+
+    fn signed(config: &CoreConfig, key: &SigningKey) -> String {
+        let signature: Signature = key.sign(&configure_message(config));
+        hex::encode(signature.to_der().as_bytes())
+    }
+
+    fn next(current: Option<&CoreConfig>, name: &str) -> CoreConfig {
+        CoreConfig {
+            name: name.into(),
+            firewall: guardian_core::wire::FirewallConfig::DryRun,
+            version: current.map_or(1, |c| c.version + 1),
+            prev: current
+                .map(|c| hex::encode(config_hash(c)))
+                .unwrap_or_default(),
+            enterprise_signer: current.and_then(|c| c.enterprise_signer.clone()),
+        }
+    }
+
+    #[test]
+    fn the_configuration_chain_refuses_rollback_skips_and_forks() {
+        let dir = TempDir::new("config-chain");
+        let core = Core::open(&dir.0).unwrap();
+        let (_, owner) = pair_with_owner(&core);
+
+        let v1 = next(None, "one");
+        core.apply_config(&v1, &signed(&v1, &owner), ConfigSource::Owner)
+            .unwrap();
+        let v2 = next(Some(&v1), "two");
+        core.apply_config(&v2, &signed(&v2, &owner), ConfigSource::Owner)
+            .unwrap();
+        assert_eq!(core.config().unwrap().version, 2);
+
+        // Replaying v1, even with its valid signature, is a rollback.
+        assert!(core
+            .apply_config(&v1, &signed(&v1, &owner), ConfigSource::Owner)
+            .is_err());
+        // Skipping a version.
+        let mut skip = next(Some(&v2), "skip");
+        skip.version = 4;
+        assert!(core
+            .apply_config(&skip, &signed(&skip, &owner), ConfigSource::Owner)
+            .is_err());
+        // A fork: right version, wrong previous link.
+        let mut fork = next(Some(&v2), "fork");
+        fork.prev = hex::encode(config_hash(&v1));
+        assert!(core
+            .apply_config(&fork, &signed(&fork, &owner), ConfigSource::Owner)
+            .is_err());
+        // A stranger's signature.
+        let stranger = SigningKey::random(&mut OsRng);
+        let v3 = next(Some(&v2), "three");
+        assert!(core
+            .apply_config(&v3, &signed(&v3, &stranger), ConfigSource::Owner)
+            .is_err());
+
+        // The applied links are in the chain file and in the record.
+        let chain = fs::read_to_string(dir.0.join("config-chain.jsonl")).unwrap();
+        assert_eq!(chain.lines().count(), 2);
+        let kinds: Vec<_> = core
+            .events_since(None)
+            .unwrap()
+            .into_iter()
+            .map(|e| e.kind)
+            .collect();
+        assert_eq!(kinds.iter().filter(|k| **k == "configured").count(), 2);
+    }
+
+    #[test]
+    fn the_enterprise_signer_needs_the_owner_and_cannot_replace_itself() {
+        let dir = TempDir::new("config-enterprise");
+        let core = Core::open(&dir.0).unwrap();
+        let (_, owner) = pair_with_owner(&core);
+        let enterprise = SigningKey::random(&mut OsRng);
+        let enterprise_public =
+            hex::encode(enterprise.verifying_key().to_encoded_point(true).as_bytes());
+
+        // Not authorised yet.
+        let v1 = next(None, "remote");
+        assert!(core
+            .apply_config(&v1, &signed(&v1, &enterprise), ConfigSource::Enterprise)
+            .is_err());
+
+        // The owner authorises it.
+        let mut v1 = next(None, "owner");
+        v1.enterprise_signer = Some(enterprise_public.clone());
+        core.apply_config(&v1, &signed(&v1, &owner), ConfigSource::Owner)
+            .unwrap();
+
+        // The enterprise signer can now publish the next link.
+        let v2 = next(Some(&v1), "from-iac");
+        core.apply_config(&v2, &signed(&v2, &enterprise), ConfigSource::Enterprise)
+            .unwrap();
+        assert_eq!(core.config().unwrap().name, "from-iac");
+
+        // But it cannot change or remove the signer, nor carry secrets.
+        let mut takeover = next(Some(&v2), "takeover");
+        takeover.enterprise_signer = None;
+        assert!(core
+            .apply_config(
+                &takeover,
+                &signed(&takeover, &enterprise),
+                ConfigSource::Enterprise
+            )
+            .is_err());
+        let mut secret = next(Some(&v2), "secret");
+        secret.firewall = guardian_core::wire::FirewallConfig::Openwrt {
+            url: "https://r".into(),
+            user: "hawk".into(),
+            password: "plain".into(),
+            cert_sha256: None,
+        };
+        assert!(core
+            .apply_config(
+                &secret,
+                &signed(&secret, &enterprise),
+                ConfigSource::Enterprise
+            )
+            .is_err());
+
+        // The owner still can.
+        let mut owner_change = next(Some(&v2), "owner-again");
+        owner_change.enterprise_signer = None;
+        core.apply_config(
+            &owner_change,
+            &signed(&owner_change, &owner),
+            ConfigSource::Owner,
+        )
+        .unwrap();
+        assert!(core.config().unwrap().enterprise_signer.is_none());
     }
 }

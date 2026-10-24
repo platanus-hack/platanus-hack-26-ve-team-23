@@ -1,0 +1,37 @@
+# Render Blueprint: the enterprise archive and remote configuration store
+# (ADR-0026, ADR-0027) as an S3-compatible service with Object Lock.
+#
+# RustFS (Apache-2.0, S3-compatible, Object Lock in compliance mode). Use
+# version 1.0.0-rc.1 or later: earlier versions could delete locked objects
+# (CVE-2026-73288). MinIO is not an option: it stopped publishing images in
+# October 2025.
+#
+# Deploy: Render dashboard -> New -> Blueprint -> this repository, Blueprint
+# path `infra/render/render.yaml`. Then create the bucket with Object Lock from
+# `infra/aws` with `-var target=s3` (see infra/README.md).
+
+services:
+  - type: web
+    name: hawk-archive
+    runtime: image
+    image:
+      # Pin a tag >= 1.0.0-rc.1 before the demo.
+      url: docker.io/rustfs/rustfs:latest
+    plan: starter            # a persistent disk needs a paid instance
+    region: oregon
+    envVars:
+      - key: RUSTFS_ACCESS_KEY
+        generateValue: true
+      - key: RUSTFS_SECRET_KEY
+        generateValue: true
+      # Render routes HTTPS to the port the service listens on.
+      - key: PORT
+        value: "10000"
+      - key: RUSTFS_ADDRESS
+        value: ":10000"
+      - key: RUSTFS_CONSOLE_ENABLE
+        value: "false"
+    disk:
+      name: rustfs-data
+      mountPath: /data
+      sizeGB: 5

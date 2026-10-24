@@ -23,6 +23,7 @@ pub mod kafka;
 pub mod mikrotik;
 #[cfg(feature = "openwrt")]
 pub mod openwrt;
+pub mod remote_config;
 pub mod sinks;
 pub mod tls;
 #[cfg(feature = "webhook")]

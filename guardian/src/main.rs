@@ -53,6 +53,41 @@ fn announce(core: &core::Core, port: u16) -> Option<discovery::Announcement> {
     }
 }
 
+/// Creates the enterprise signer's key pair (ADR-0027). The private key goes
+/// to the pipeline's secret store; the public key goes into a configuration
+/// the owner signs from the app.
+#[allow(clippy::print_stdout)] // The command's purpose is to print for the operator.
+fn config_keygen() -> Result<(), Box<dyn std::error::Error>> {
+    let key = p256::ecdsa::SigningKey::random(&mut rand::rngs::OsRng);
+    let output = serde_json::json!({
+        "private_key": hex::encode(key.to_bytes()),
+        "public_key": hex::encode(key.verifying_key().to_encoded_point(true).as_bytes()),
+    });
+    println!("{}", serde_json::to_string_pretty(&output)?);
+    Ok(())
+}
+
+/// Signs `config.json` (a `CoreConfig` with the next `version` and `prev`)
+/// with the enterprise signer's key and prints the `SignedConfig` to publish.
+#[allow(clippy::print_stdout)] // The command's purpose is to print the signed document.
+fn config_sign(key_file: &str, config_file: &str) -> Result<(), Box<dyn std::error::Error>> {
+    use p256::ecdsa::{signature::Signer as _, Signature};
+    let key_hex = std::fs::read_to_string(key_file)?;
+    let key = p256::ecdsa::SigningKey::from_slice(&hex::decode(key_hex.trim())?)?;
+    let config: guardian_core::wire::CoreConfig =
+        serde_json::from_slice(&std::fs::read(config_file)?)?;
+    if config.has_secrets() {
+        return Err("a remote configuration must not carry router secrets".into());
+    }
+    let signature: Signature = key.sign(&guardian_core::wire::configure_message(&config));
+    let signed = guardian_core::wire::SignedConfig {
+        config,
+        signature: hex::encode(signature.to_der().as_bytes()),
+    };
+    println!("{}", serde_json::to_string_pretty(&signed)?);
+    Ok(())
+}
+
 // The probe's purpose is to print for the operator.
 #[allow(clippy::print_stdout)]
 async fn probe(addr: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -76,6 +111,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let args: Vec<String> = std::env::args().collect();
+    match args.get(1).map(String::as_str) {
+        Some("config-keygen") => return config_keygen(),
+        Some("config-sign") => {
+            let (Some(key), Some(file)) = (args.get(2), args.get(3)) else {
+                return Err("usage: guardian config-sign <private-key-file> <config.json>".into());
+            };
+            return config_sign(key, file);
+        }
+        _ => {}
+    }
     if args.get(1).map(String::as_str) == Some("probe") {
         let addr = args.get(2).map_or("127.0.0.1:7443", String::as_str);
         return probe(addr).await;
@@ -135,6 +180,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         announcer,
     );
     tracing::info!(%addr, "core listening (QUIC)");
+    // Enterprise edition (ADR-0027): configuration published remotely and
+    // signed by the enterprise signer the owner authorised. Off by default:
+    // the Core runs fully offline.
+    if let Some(settings) = integrations::remote_config::RemoteConfigSettings::from_env() {
+        match integrations::remote_config::RemoteConfig::new(&settings) {
+            Ok(remote) => {
+                tracing::info!(key = %settings.key, every_secs = settings.poll_secs, "remote configuration enabled");
+                tokio::spawn(api::poll_remote_config(
+                    state.clone(),
+                    remote,
+                    settings.poll_secs,
+                ));
+            }
+            Err(err) => tracing::error!(%err, "remote configuration disabled"),
+        }
+    }
+
     let hook = state.clone();
     quic::serve_with(
         endpoint,

@@ -18,7 +18,7 @@ use std::{
 use detect::Detector;
 use edge_net::quic::PeerId;
 use guardian_core::{
-    wire::{ConfigSummary, CoreConfig, FirewallConfig, Request, Response},
+    wire::{FirewallConfig, Request, Response},
     Decision, EventKind, Severity, ToolCall,
 };
 use integrations::{sinks::Publisher, Firewall, SinkEvent};
@@ -135,13 +135,6 @@ impl AppState {
     }
 }
 
-fn summary(config: &CoreConfig) -> ConfigSummary {
-    ConfigSummary {
-        name: config.name.clone(),
-        firewall: config.firewall.kind().to_owned(),
-    }
-}
-
 fn core_error(err: &CoreError) -> Response {
     Response::error(err.to_string())
 }
@@ -151,7 +144,7 @@ pub async fn handle(state: AppState, peer: PeerId, addr: SocketAddr, req: Reques
         Request::Hello => Response::Hello {
             core_public: state.core.public().clone(),
             paired: state.core.is_paired(),
-            config: state.core.config().as_ref().map(summary),
+            config: state.core.config().as_ref().map(crate::core::summary),
         },
         Request::PairOffer => match state.core.pair_offer() {
             Ok(offer) => Response::Offer {
@@ -185,17 +178,18 @@ pub async fn handle(state: AppState, peer: PeerId, addr: SocketAddr, req: Reques
             if !state.is_witness(&peer) {
                 return Response::error("only the paired witness may configure this Core");
             }
-            match state.core.set_config(&config, &signature) {
-                Ok(()) => {
+            match state
+                .core
+                .apply_config(&config, &signature, crate::core::ConfigSource::Owner)
+            {
+                Ok(summary) => {
                     let firewall = firewall_from_config(&config.firewall);
                     tracing::info!(name = %config.name, firewall = firewall.name(), "configured by the owner");
                     if let Ok(mut slot) = state.firewall.write() {
                         *slot = firewall;
                     }
                     (state.announcer)(&state.core);
-                    Response::Configured {
-                        config: summary(&config),
-                    }
+                    Response::Configured { config: summary }
                 }
                 Err(err) => core_error(&err),
             }
@@ -353,11 +347,120 @@ async fn contain(state: &AppState, peer: Option<IpAddr>, trigger: &EventMeta) {
     }
 }
 
+/// Records an alert in the chain and publishes it to the sinks.
+fn alert(state: &AppState, severity: Severity, reason: String, content: serde_json::Value) {
+    let meta = EventMeta {
+        kind: "alert",
+        severity: Some(severity),
+        reason: Some(reason),
+        ..EventMeta::empty()
+    };
+    match state.core.record(EventKind::Alert, meta, &content, true) {
+        Ok(meta) => state.publisher.send(SinkEvent {
+            family: "alerts",
+            seq: meta.seq,
+            timestamp_ms: meta.timestamp_ms,
+            key: "core".into(),
+            body: serde_json::to_value(&meta).unwrap_or_default(),
+        }),
+        Err(err) => tracing::error!(%err, "could not record alert"),
+    }
+}
+
+/// Enterprise edition (ADR-0027): reads the published signed configuration
+/// every `poll_secs` and applies it if it is the next link of the chain and
+/// carries the enterprise signer's signature. A lower version (rollback) or
+/// a different configuration with the active version (fork) is never
+/// applied and raises one alert per distinct document.
+pub async fn poll_remote_config(
+    state: AppState,
+    remote: integrations::remote_config::RemoteConfig,
+    poll_secs: u64,
+) {
+    use guardian_core::wire::{config_hash, SignedConfig};
+    let mut last_seen: Option<[u8; 32]> = None;
+    loop {
+        match remote.fetch().await {
+            Ok(Some(bytes)) => match serde_json::from_slice::<SignedConfig>(&bytes) {
+                Ok(signed) => {
+                    let hash = config_hash(&signed.config);
+                    if last_seen != Some(hash) {
+                        last_seen = Some(hash);
+                        apply_remote(&state, &signed, hash);
+                    }
+                }
+                Err(err) => {
+                    tracing::warn!(%err, "remote configuration is not a signed configuration")
+                }
+            },
+            Ok(None) => tracing::debug!("no remote configuration published"),
+            Err(err) => {
+                tracing::warn!(%err, "remote configuration unreachable; the Core keeps its own")
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(poll_secs.max(5))).await;
+    }
+}
+
+fn apply_remote(state: &AppState, signed: &guardian_core::wire::SignedConfig, hash: [u8; 32]) {
+    let current = state.core.config();
+    let active = current.as_ref().map_or(0, |c| c.version);
+    let version = signed.config.version;
+    let content =
+        serde_json::json!({ "version": version, "hash": hex::encode(hash), "active": active });
+    if version < active
+        || (version == active
+            && current.as_ref().map(guardian_core::wire::config_hash) != Some(hash))
+    {
+        let what = if version < active { "rollback" } else { "fork" };
+        tracing::error!(version, active, what, "remote configuration refused");
+        alert(
+            state,
+            Severity::Critical,
+            format!("remote configuration {what} refused (v{version}, active v{active})"),
+            content,
+        );
+        return;
+    }
+    if version == active {
+        return;
+    }
+    match state.core.apply_config(
+        &signed.config,
+        &signed.signature,
+        crate::core::ConfigSource::Enterprise,
+    ) {
+        Ok(summary) => {
+            let firewall = firewall_from_config(&signed.config.firewall);
+            tracing::info!(
+                version,
+                firewall = firewall.name(),
+                "remote configuration applied"
+            );
+            if let Ok(mut slot) = state.firewall.write() {
+                *slot = firewall;
+            }
+            (state.announcer)(&state.core);
+            let _ = summary;
+        }
+        Err(err) => {
+            tracing::error!(%err, version, "remote configuration refused");
+            alert(
+                state,
+                Severity::High,
+                format!("remote configuration refused: {err}"),
+                content,
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::core::tests::{pair, TempDir, WITNESS};
     use detect::Rule;
+    use guardian_core::wire::CoreConfig;
     use guardian_core::Finding;
     use integrations::dry_run::DryRun;
 
@@ -434,6 +537,9 @@ mod tests {
         let config = CoreConfig {
             name: "lab".into(),
             firewall: FirewallConfig::DryRun,
+            version: 1,
+            prev: String::new(),
+            enterprise_signer: None,
         };
         let bad = handle(
             s.clone(),
