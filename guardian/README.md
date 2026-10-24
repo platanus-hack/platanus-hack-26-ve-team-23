@@ -28,7 +28,14 @@ hello from a throwaway identity and prints the answer.
 Configuration: `GUARDIAN_ADDR`, `GUARDIAN_DATA_DIR` (default
 `./guardian-data`), `GUARDIAN_FIREWALL` and the router variables of
 `integrations` (used until the owner configures the Core from the app),
-`KAFKA_BROKERS`, `GUARDIAN_WEBHOOK_URL`, `RUST_LOG`.
+`KAFKA_BROKERS`, `GUARDIAN_WEBHOOK_URL`, `RUST_LOG`, and the off-site
+archive (ADR-0026, optional): `ARCHIVE_ENDPOINT`, `ARCHIVE_REGION`,
+`ARCHIVE_BUCKET`, `ARCHIVE_PREFIX`, `ARCHIVE_ACCESS_KEY`,
+`ARCHIVE_SECRET_KEY` (see `infra/README.md`).
+
+Each signed head covers one batch (`first_seq..=seq`) and carries its
+Merkle root (ADR-0025); with the archive enabled, the batch and its head
+are uploaded in the background after signing.
 
 At start the Core logs `core identity fingerprint=…`: the owner compares it
 in the activation wizard.

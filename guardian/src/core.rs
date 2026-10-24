@@ -23,11 +23,13 @@ use std::{
 
 use detect::Verdict;
 use guardian_core::{
+    merkle,
     pairing::{confirmation_code, pair_message},
     seal,
     wire::{configure_message, CoreConfig},
     CoreKeys, CorePublic, Decision, Event, EventKind, HashChain, Severity, SignedHead, ToolCall,
 };
+use integrations::archive::ArchiveBatch;
 use p256::ecdsa::{signature::Verifier as _, Signature, VerifyingKey};
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -136,7 +138,9 @@ struct Inner {
     events: File,
     heads: Vec<SignedHead>,
     recent: VecDeque<EventMeta>,
-    unsigned: u64,
+    /// Events since the last signed head: the batch the next head covers
+    /// (ADR-0025).
+    batch: Vec<Event>,
 }
 
 pub struct Core {
@@ -144,6 +148,8 @@ pub struct Core {
     public: CorePublic,
     dir: PathBuf,
     inner: Mutex<Inner>,
+    /// Off-site archive of every signed batch, when configured (ADR-0026).
+    archiver: std::sync::OnceLock<integrations::archive::Archiver>,
 }
 
 impl std::fmt::Debug for Core {
@@ -208,12 +214,15 @@ fn write_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
     options.open(path)?.write_all(bytes)
 }
 
-/// Rebuilds the chain from `events.bin`. Any gap, reordering or trailing
-/// garbage is reported as corruption rather than silently skipped.
-fn replay(path: &Path) -> Result<HashChain, CoreError> {
+/// Rebuilds the chain from `events.bin` and returns it with the events from
+/// `batch_from` on (those not yet covered by a signed head). Any gap,
+/// reordering or trailing garbage is reported as corruption rather than
+/// silently skipped.
+fn replay(path: &Path, batch_from: u64) -> Result<(HashChain, Vec<Event>), CoreError> {
     let mut chain = HashChain::new();
+    let mut batch = Vec::new();
     if !path.exists() {
-        return Ok(chain);
+        return Ok((chain, batch));
     }
     let mut bytes = Vec::new();
     File::open(path)?.read_to_end(&mut bytes)?;
@@ -224,9 +233,12 @@ fn replay(path: &Path) -> Result<HashChain, CoreError> {
         chain
             .append(&event)
             .map_err(|_| CoreError::Corrupt("events.bin order"))?;
+        if event.seq >= batch_from {
+            batch.push(event);
+        }
         offset += used;
     }
-    Ok(chain)
+    Ok((chain, batch))
 }
 
 fn load_heads(path: &Path) -> Result<Vec<SignedHead>, CoreError> {
@@ -257,14 +269,13 @@ impl Core {
             Pairing::Unpaired { nonce: random32() }
         };
 
+        let heads = load_heads(&dir.join("heads.jsonl"))?;
         let events_path = dir.join("events.bin");
-        let chain = replay(&events_path)?;
+        let (chain, batch) = replay(&events_path, heads.last().map_or(0, |h| h.seq + 1))?;
         let events = OpenOptions::new()
             .create(true)
             .append(true)
             .open(&events_path)?;
-        let heads = load_heads(&dir.join("heads.jsonl"))?;
-        let unsigned = chain.next_seq() - heads.last().map_or(0, |h| h.seq + 1);
 
         Ok(Self {
             keys,
@@ -276,9 +287,15 @@ impl Core {
                 events,
                 heads,
                 recent: VecDeque::new(),
-                unsigned,
+                batch,
             }),
+            archiver: std::sync::OnceLock::new(),
         })
+    }
+
+    /// Starts handing every signed batch to the off-site archive.
+    pub fn set_archiver(&self, archiver: integrations::archive::Archiver) {
+        let _ = self.archiver.set(archiver);
     }
 
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, Inner>, CoreError> {
@@ -376,15 +393,7 @@ impl Core {
             kind: "paired",
             ..EventMeta::empty()
         };
-        Self::append(
-            &self.keys,
-            &self.dir,
-            &mut inner,
-            EventKind::Paired,
-            b"paired",
-            meta,
-            true,
-        )?;
+        self.append(&mut inner, EventKind::Paired, b"paired", meta, true)?;
         Ok(code)
     }
 
@@ -427,20 +436,11 @@ impl Core {
             ..EventMeta::empty()
         };
         let urgent = top.is_some_and(|f| f.severity >= Severity::High);
-        Self::append(
-            &self.keys,
-            &self.dir,
-            &mut inner,
-            EventKind::Decision,
-            &sealed,
-            meta,
-            urgent,
-        )
+        self.append(&mut inner, EventKind::Decision, &sealed, meta, urgent)
     }
 
     fn append(
-        keys: &CoreKeys,
-        dir: &Path,
+        &self,
         inner: &mut Inner,
         kind: EventKind,
         payload: &[u8],
@@ -467,18 +467,36 @@ impl Core {
         }
         inner.recent.push_back(meta.clone());
 
-        inner.unsigned += 1;
-        if urgent || inner.unsigned >= EVENTS_PER_HEAD {
-            let signed = SignedHead::sign(keys, event.seq, event.timestamp_ms, head);
-            let mut line = serde_json::to_vec(&signed).map_err(|_| CoreError::Corrupt("head"))?;
+        inner.batch.push(event.clone());
+        if urgent || inner.batch.len() as u64 >= EVENTS_PER_HEAD {
+            let first_seq = inner.batch.first().map_or(event.seq, |e| e.seq);
+            let leaves: Vec<_> = inner.batch.iter().map(merkle::leaf_hash).collect();
+            let signed = SignedHead::sign(
+                &self.keys,
+                first_seq,
+                event.seq,
+                event.timestamp_ms,
+                head,
+                merkle::root(&leaves),
+            );
+            let head_json = serde_json::to_vec(&signed).map_err(|_| CoreError::Corrupt("head"))?;
+            let mut line = head_json.clone();
             line.push(b'\n');
             OpenOptions::new()
                 .create(true)
                 .append(true)
-                .open(dir.join("heads.jsonl"))?
+                .open(self.dir.join("heads.jsonl"))?
                 .write_all(&line)?;
+            if let Some(archiver) = self.archiver.get() {
+                archiver.submit(ArchiveBatch {
+                    first_seq,
+                    seq: event.seq,
+                    events: inner.batch.iter().flat_map(Event::encode).collect(),
+                    head_json,
+                });
+            }
             inner.heads.push(signed);
-            inner.unsigned = 0;
+            inner.batch.clear();
         }
         Ok(meta)
     }
@@ -504,9 +522,7 @@ impl Core {
             serde_json::to_vec(content).map_err(|_| CoreError::Corrupt("event encoding"))?;
         let sealed = seal::seal(&epoch, &plaintext, &mut OsRng)
             .map_err(|_| CoreError::Corrupt("sealing failed"))?;
-        Self::append(
-            &self.keys, &self.dir, &mut inner, kind, &sealed, meta, urgent,
-        )
+        self.append(&mut inner, kind, &sealed, meta, urgent)
     }
 
     /// Checks a signature by the paired owner (DER, hex) over `message`.
@@ -721,5 +737,54 @@ pub(crate) mod tests {
             .unwrap()
             .contains("\"tool\":\"bash\""));
         assert!(seal::open(&[0u8; 32], &events[1].payload).is_err());
+    }
+
+    #[test]
+    fn heads_cover_contiguous_batches_and_prove_their_events() {
+        let dir = TempDir::new("merkle");
+        let core = Core::open(&dir.0).unwrap();
+        let public = core.public().clone();
+        pair(&core);
+        for _ in 0..12 {
+            core.record_decision(&call(), &verdict(None)).unwrap();
+        }
+        core.record_decision(&call(), &verdict(Some(Severity::High)))
+            .unwrap();
+
+        let heads = core.heads_since(None).unwrap();
+        // Batches follow each other with no gap and no overlap.
+        let mut next = 0;
+        for head in &heads {
+            assert_eq!(head.verify(&public), Ok(()));
+            assert_eq!(head.first_seq, next);
+            next = head.seq + 1;
+        }
+
+        // Any stored event is proven by the head of its batch.
+        let bytes = fs::read(dir.0.join("events.bin")).unwrap();
+        let mut events = Vec::new();
+        let mut offset = 0;
+        while offset < bytes.len() {
+            let (event, used) = Event::decode(&bytes[offset..]).unwrap();
+            events.push(event);
+            offset += used;
+        }
+        let head = heads
+            .iter()
+            .find(|h| h.first_seq <= 5 && 5 <= h.seq)
+            .unwrap();
+        let batch = &events[head.first_seq as usize..=head.seq as usize];
+        let leaves: Vec<_> = batch.iter().map(merkle::leaf_hash).collect();
+        let index = 5 - head.first_seq as usize;
+        let path = merkle::proof(&leaves, index).unwrap();
+        assert!(head.verify_inclusion(&events[5], &path));
+
+        // After a restart, the open batch continues where it was.
+        drop(core);
+        let core = Core::open(&dir.0).unwrap();
+        core.record_decision(&call(), &verdict(Some(Severity::High)))
+            .unwrap();
+        let last = core.heads_since(None).unwrap().pop().unwrap();
+        assert_eq!(last.first_seq, next);
     }
 }

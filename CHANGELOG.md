@@ -10,6 +10,13 @@ Every entry is written when the change is merged, under `Unreleased`.
 
 ### Added
 
+- ADR-0025 and ADR-0026: a Merkle tree per batch with its root inside
+  every signed head (head v2, inclusion proofs bound to the head), and an
+  off-site archive of sealed batches and heads in S3 with Object Lock.
+- `integrations::archive`: background uploader (SigV4 by `rusty-s3`,
+  signed `Content-MD5`), enabled with `ARCHIVE_*`; never blocks decisions.
+- `infra/aws` (OpenTofu) and `infra/localstack` for the demo's cloud PC.
+
 - ADR-0023 and ADR-0024: QUIC with mutual TLS between all our edges (the
   Core has no HTTP endpoint) and discovery with an activation wizard.
 - Pairing binds the app's device identity; the Core serves its record and

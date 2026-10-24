@@ -58,6 +58,8 @@ supersedes it; the old one only has its status updated.
 | [0022](0022-decision-policy-severities-and-defaults.md) | Decision policy: severities, outcomes and defaults | Proposed |
 | [0023](0023-quic-with-mutual-tls-between-edges.md) | QUIC with mutual TLS bound to identities between our edges | Proposed |
 | [0024](0024-discovery-and-activation-wizard.md) | Discovery on the local network and an activation wizard | Proposed |
+| [0025](0025-merkle-tree-per-batch.md) | A Merkle tree per batch, its root inside every signed head | Proposed |
+| [0026](0026-off-site-archive-in-s3-object-lock.md) | Off-site archive of sealed batches in S3 with Object Lock | Proposed |
 
 ## Open questions
 

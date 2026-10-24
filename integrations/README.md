@@ -17,6 +17,13 @@ HTTPS to a router requires pinning its certificate fingerprint
 | MikroTik RouterOS 7 | `MIKROTIK_URL`, `MIKROTIK_USER`, `MIKROTIK_PASSWORD`, `MIKROTIK_CERT_SHA256`, `MIKROTIK_LIST` | An address list and one drop rule; an account with `rest-api,read,write` |
 | OpenWrt 22.03+ | `OPENWRT_URL`, `OPENWRT_USER`, `OPENWRT_PASSWORD`, `OPENWRT_CERT_SHA256` | `openwrt/guardian` in `/usr/libexec/rpcd/`, `openwrt/guardian-acl.json` in `/usr/share/rpcd/acl.d/`, `openwrt/guardian.nft` in `/etc/nftables.d/` (edit `CORE_ADDRESS`), an rpcd login with `read`/`write` = `guardian-core` |
 
+## Archive (ADR-0026)
+
+`archive::Archiver` uploads each sealed batch and its signed head to S3
+(AWS or LocalStack) in the background, with retries; requests are signed by
+`rusty-s3` with `Content-MD5` included, as Object Lock requires. Configured
+with `ARCHIVE_*`; infrastructure in `infra/`.
+
 ## Sinks
 
 `KAFKA_BROKERS` (comma-separated, topics `<KAFKA_TOPIC_PREFIX>.decisions`,

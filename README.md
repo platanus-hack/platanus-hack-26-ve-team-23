@@ -140,6 +140,7 @@ The agent under test is OpenCode with a 7B to 8B model served by Ollama
 | Design and threat model | [docs/WHITEPAPER.md](docs/WHITEPAPER.md) |
 | Demo script | [docs/DEMO.md](docs/DEMO.md) |
 | Router lab (Hyper-V VMs: MikroTik CHR, OpenWrt) | [docs/LAB.md](docs/LAB.md) |
+| Off-site archive (OpenTofu, LocalStack for the demo) | [infra/README.md](infra/README.md) |
 | Milestones and state | [docs/ROADMAP.md](docs/ROADMAP.md) |
 | What is missing and why | [PENDIENTES.md](PENDIENTES.md) |
 | Why it works this way | [docs/adr](docs/adr/README.md) |

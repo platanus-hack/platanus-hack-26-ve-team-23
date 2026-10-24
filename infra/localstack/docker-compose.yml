@@ -1,0 +1,20 @@
+# The "cloud" for the demo: LocalStack on a separate PC (ADR-0026).
+#
+#   docker compose up -d
+#   cd ../aws && tofu init && tofu apply -var localstack_endpoint=http://<this-pc>:4566
+#   tofu output -json core_environment   # the ARCHIVE_* values for the Core
+#
+# The community edition emulates S3 (with Object Lock), KMS, IAM and STS; it
+# does not enforce IAM policies. Data lives in the ./volume directory.
+
+services:
+  localstack:
+    image: localstack/localstack:3
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3,kms,iam,sts
+      - DEBUG=0
+    volumes:
+      - ./volume:/var/lib/localstack
+    restart: unless-stopped

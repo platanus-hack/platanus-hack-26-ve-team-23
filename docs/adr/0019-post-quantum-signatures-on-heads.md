@@ -93,4 +93,7 @@ optional daily checkpoints, where size and speed do not matter.
 
 ## History
 
+- v1.1 (2026-10-24): The signed bytes become head v2 and also carry the
+  batch's first sequence number and Merkle root (ADR-0025).
+
 - v1.0 (2026-10-24): Initial decision.

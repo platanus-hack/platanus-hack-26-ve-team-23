@@ -7,3 +7,8 @@ witness/gen/android
 witness/gen/apple
 guardian-data/
 host-daemon-data/
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+infra/localstack/volume/

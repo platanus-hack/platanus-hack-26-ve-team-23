@@ -15,6 +15,7 @@ What is missing and why: `PENDIENTES.md`.
 | M5 | Proxy and cross-check | 0004 | Pending |
 | M6 | Network containment | 0018, 0020 | Done: a critical finding quarantines the QUIC peer (dry run, MikroTik, OpenWrt); release pending |
 | M6b | Event sinks | 0020 | Done: Kafka and webhook behind a bounded queue |
+| M7b | Merkle and off-site archive | 0025, 0026 | Built: Merkle root in head v2, inclusion proofs, S3 uploader, OpenTofu module and LocalStack (module and LocalStack untested here) |
 | M7 | Signed heads and record | 0006, 0007, 0019 | Done: sealed to the epoch key, chained, persisted, hybrid heads verified by the app |
 | M8 | Owner app (phone) | 0013, 0024 | Done: activation wizard, dashboard, hosts with Identify; opening the record, `ask` answers and Android specifics pending |
 | M9 | Pairing | 0017 | Done with a P-256 owner key bound to the Core, nonce and app identity; passkeys pending |

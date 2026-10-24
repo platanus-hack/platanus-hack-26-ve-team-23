@@ -94,6 +94,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tracing::warn!("core NOT paired: every decision is denied until the app activates it");
     }
 
+    // Off-site archive of every signed batch (ADR-0026), when configured.
+    if let Some(config) = integrations::archive::ArchiveConfig::from_env() {
+        match integrations::archive::Archiver::start(&config) {
+            Ok(archiver) => {
+                tracing::info!(bucket = %config.bucket, endpoint = %config.endpoint, "archiving batches off-site");
+                core.set_archiver(archiver);
+            }
+            Err(err) => tracing::error!(%err, "archive disabled"),
+        }
+    }
+
     let firewall = match core.config() {
         Some(config) => api::firewall_from_config(&config.firewall),
         None => Arc::from(integrations::firewall_from_env()),

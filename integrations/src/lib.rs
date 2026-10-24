@@ -5,6 +5,8 @@
 //!   containment holds even against a host the agent fully controls.
 //! - `EventSink`: publish event metadata to Kafka or a webhook. Sinks never
 //!   block decisions and never receive the sealed content of the record.
+//! - `archive`: off-site copy of the sealed batches and signed heads in S3
+//!   with Object Lock (ADR-0026).
 
 #![forbid(unsafe_code)]
 
@@ -12,6 +14,7 @@ use std::{fmt, future::Future, net::IpAddr, pin::Pin};
 
 use serde::Serialize;
 
+pub mod archive;
 pub mod client;
 pub mod dry_run;
 #[cfg(feature = "kafka")]
