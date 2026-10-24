@@ -31,7 +31,7 @@ use guardian_core::{
     wire::{
         answer_message, approve_message, configure_message, open_record_message, release_message,
         CoreConfig, FirewallConfig, HostApproval, HostInfo, PendingAsk, RecordEvent, Request,
-        Response,
+        Response, Thresholds,
     },
     CorePublic, Event, EventKind, SignedHead,
 };
@@ -416,13 +416,15 @@ pub async fn pair_core(
     })
 }
 
-/// Names the Core and sets its firewall, signed by the owner (ADR-0024).
+/// Names the Core, sets its firewall and the attention thresholds, signed by
+/// the owner (ADR-0024, ADR-0033). Without thresholds the active ones stay.
 #[tauri::command]
 pub async fn configure_core(
     app: tauri::AppHandle,
     link: State<'_, Link>,
     name: String,
     firewall: FirewallConfig,
+    thresholds: Option<Thresholds>,
 ) -> Result<String, String> {
     let dir = data_dir(&app)?;
     let conn = connect(&dir, &link).await?;
@@ -433,15 +435,24 @@ pub async fn configure_core(
         Response::Hello { config, .. } => config,
         other => return Err(format!("unexpected answer: {other:?}")),
     };
+    let thresholds = thresholds
+        .or_else(|| active.as_ref().map(|c| c.thresholds))
+        .unwrap_or_default();
     let config = CoreConfig {
         name: name.trim().chars().take(48).collect(),
         firewall,
         version: active.as_ref().map_or(1, |c| c.version + 1),
         prev: active.as_ref().map(|c| c.hash.clone()).unwrap_or_default(),
         enterprise_signer: active.and_then(|c| c.enterprise_signer),
+        thresholds,
     };
     if config.name.is_empty() {
         return Err("give the Core a name".into());
+    }
+    if !config.thresholds.is_valid() {
+        return Err(
+            "a high finding must at least ask, and asking cannot start above denying".into(),
+        );
     }
     let signature: Signature = owner_key(&dir)?.sign(&configure_message(&config));
     let request = Request::Configure {

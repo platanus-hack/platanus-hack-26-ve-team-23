@@ -215,6 +215,7 @@
             <div><dt data-i18n="core.name"></dt><dd id="set-core-name"></dd></div>
             <div><dt data-i18n="core.fingerprint"></dt><dd><code id="set-core-fp"></code></dd></div>
             <div><dt data-i18n="settings.firewall"></dt><dd id="set-firewall"></dd></div>
+            <div><dt data-i18n="settings.thresholds"></dt><dd id="set-thresholds"></dd></div>
             <div><dt data-i18n="settings.events"></dt><dd id="set-events"></dd></div>
           </dl>
           <div class="row">
@@ -257,6 +258,25 @@
             <li><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><span data-i18n="settings.factPin"></span></li>
             <li><svg class="ic" aria-hidden="true"><use href="#i-chain"/></svg><span data-i18n="settings.factChain"></span></li>
             <li><svg class="ic" aria-hidden="true"><use href="#i-offline"/></svg><span data-i18n="settings.factOffline"></span></li>
+          </ul>
+        </section>
+
+        <section class="card" aria-labelledby="h-set-scope">
+          <div class="card-head"><h2 id="h-set-scope" data-i18n="scope.title"></h2></div>
+          <h3 class="scope-h" data-i18n="scope.does"></h3>
+          <ul class="facts">
+            <li><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span data-i18n="scope.doesHook"></span></li>
+            <li><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span data-i18n="scope.doesRules"></span></li>
+            <li><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span data-i18n="scope.doesContain"></span></li>
+            <li><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span data-i18n="scope.doesRecord"></span></li>
+            <li><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span data-i18n="scope.doesFailClosed"></span></li>
+          </ul>
+          <h3 class="scope-h" data-i18n="scope.doesNot"></h3>
+          <ul class="facts">
+            <li><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span data-i18n="scope.notUnknown"></span></li>
+            <li><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span data-i18n="scope.notModel"></span></li>
+            <li><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span data-i18n="scope.notAgents"></span></li>
+            <li><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span data-i18n="scope.notOutside"></span></li>
           </ul>
         </section>
 
@@ -356,6 +376,25 @@
       <label class="field" data-only="mikrotik"><span data-i18n="cfg.list"></span><input name="list" type="text" spellcheck="false" autocomplete="off" data-i18n-ph="cfg.listPh"></label>
       <p class="note" data-i18n="cfg.secretNote"></p>
     </div>
+    <fieldset class="thresholds">
+      <legend data-i18n="cfg.attention"></legend>
+      <label class="field"><span data-i18n="cfg.askFrom"></span>
+        <select name="ask">
+          <option value="low" data-i18n="sev.low"></option>
+          <option value="medium" data-i18n="sev.medium"></option>
+          <option value="high" data-i18n="sev.high"></option>
+        </select>
+      </label>
+      <label class="field"><span data-i18n="cfg.denyFrom"></span>
+        <select name="deny">
+          <option value="low" data-i18n="sev.low"></option>
+          <option value="medium" data-i18n="sev.medium"></option>
+          <option value="high" data-i18n="sev.high"></option>
+          <option value="critical" data-i18n="cfg.denyCriticalOnly"></option>
+        </select>
+      </label>
+      <p class="note" data-i18n="cfg.attentionNote"></p>
+    </fieldset>
     <p class="form-error" role="alert" hidden></p>
     <div class="row">
       <button class="pill primary" type="submit" data-submit></button>

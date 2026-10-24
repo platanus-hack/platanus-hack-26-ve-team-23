@@ -12,7 +12,7 @@ pub mod policy;
 pub mod rules;
 pub mod workspace;
 
-use guardian_core::{Decision, Finding, ToolCall};
+use guardian_core::{wire::Thresholds, Decision, Finding, ToolCall};
 
 pub use catalogue::{builtin, builtin_data, load_dir};
 pub use data::{DataRule, Field, RuleFile};
@@ -36,8 +36,13 @@ impl Detector {
     }
 
     pub fn decide(&mut self, call: &ToolCall) -> Verdict {
+        self.decide_with(call, &Thresholds::default())
+    }
+
+    /// Decides with the owner's thresholds (ADR-0033).
+    pub fn decide_with(&mut self, call: &ToolCall, thresholds: &Thresholds) -> Verdict {
         let findings: Vec<Finding> = self.rules.iter().filter_map(|r| r.check(call)).collect();
-        policy::apply(findings)
+        policy::apply_with(findings, thresholds)
     }
 
     /// Convenience for callers that only need the answer.

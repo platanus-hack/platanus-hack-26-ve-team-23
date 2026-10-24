@@ -23,7 +23,7 @@ Its design, screens and UI contract are in ADR-0031.
 | Machines | Who is watching? Who waits for approval? Who is contained? | `dashboard`, `identify_host`, `approve_host`, `release_host` |
 | Events | What was decided, with filters by outcome, severity and text | `dashboard` |
 | Record | Is the history intact (heads verified against the pinned identity)? Open the sealed record | `dashboard`, `open_record` |
-| Settings | This Core, this device, theme and language, change name or firewall, forget the Core | `app_info`, `configure_core`, `forget_core` |
+| Settings | This Core, this device, theme and language, change name, firewall or attention thresholds (ADR-0033), what HAWK does and does not do, forget the Core | `app_info`, `configure_core`, `forget_core` |
 
 The state shown at the top is derived from the dashboard (active, dormant,
 unreachable, identity differs, heads do not verify, paired with another

@@ -167,5 +167,39 @@
       "fire": ["sed -i s/a/b/ guardian-data/events.bin", "rm guardian-data/heads.jsonl"],
       "deny": ["cat guardian-data/README", "ls guardian-data"]
     }
+  },
+  {
+    "id": "hawk.git.force-push",
+    "severity": "medium",
+    "mitre": "T1565",
+    "tools": ["bash"],
+    "field": "command",
+    "patterns": [
+      "git[ \\t]+push\\b[^\\n]*[ \\t](--force\\b|-f\\b|\\+[A-Za-z0-9_./-]+)"
+    ],
+    "exceptions": ["--force-with-lease"],
+    "reason": "force push rewrites shared history",
+    "examples": {
+      "fire": ["git push --force origin main", "git push -f", "git push origin +main"],
+      "deny": ["git push origin main", "git push --follow-tags", "git push --force-with-lease origin feature"]
+    }
+  },
+  {
+    "id": "hawk.fs.recursive-delete",
+    "severity": "medium",
+    "mitre": "T1485",
+    "tools": ["bash"],
+    "field": "command",
+    "patterns": [
+      "\\brm[ \\t]+(-[A-Za-z]*[rR][A-Za-z]*|--recursive)\\b"
+    ],
+    "exceptions": [
+      "\\brm[ \\t]+-[A-Za-z]+[ \\t]+(\\./)?(node_modules|target|dist|build|\\.next|__pycache__|\\.pytest_cache|coverage)/?[ \\t]*$"
+    ],
+    "reason": "deletes a directory tree",
+    "examples": {
+      "fire": ["rm -rf src", "rm -r ./data", "rm --recursive docs"],
+      "deny": ["rm file.txt", "rm -f out.log", "rm -rf node_modules", "rm -rf ./target/"]
+    }
   }
 ]

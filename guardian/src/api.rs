@@ -542,7 +542,12 @@ pub async fn handle(state: AppState, peer: PeerId, addr: SocketAddr, req: Reques
             Ok(status) => {
                 let mut status = serde_json::to_value(status).unwrap_or_default();
                 status["firewall"] = state.firewall().name().into();
-                if let Some(config) = state.core.config() {
+                let config = state.core.config();
+                // The app shows the active thresholds (ADR-0033).
+                status["thresholds"] =
+                    serde_json::to_value(config.as_ref().map(|c| c.thresholds).unwrap_or_default())
+                        .unwrap_or_default();
+                if let Some(config) = config {
                     status["name"] = config.name.into();
                 }
                 Response::Status { status }
@@ -738,8 +743,15 @@ async fn decide(state: &AppState, call: &ToolCall, peer: PeerId, ip: IpAddr) -> 
     if !state.is_approved(&peer) {
         return Decision::deny("host not approved by the owner");
     }
+    // The owner's thresholds (ADR-0033); the ADR-0022 table until the owner
+    // configures them.
+    let thresholds = state
+        .core
+        .config()
+        .map(|c| c.thresholds)
+        .unwrap_or_default();
     let verdict = match state.detector.lock() {
-        Ok(mut detector) => detector.decide(call),
+        Ok(mut detector) => detector.decide_with(call, &thresholds),
         Err(_) => return Decision::deny("detector unavailable"),
     };
     let meta = match state.core.record_decision(call, &verdict) {
@@ -1244,6 +1256,7 @@ mod tests {
             version: 1,
             prev: String::new(),
             enterprise_signer: None,
+            thresholds: Default::default(),
         };
         let bad = handle(
             s.clone(),
@@ -1903,6 +1916,56 @@ mod tests {
         .await;
         assert!(matches!(resp, Response::Ack));
         assert!(task.await.unwrap().is_allow());
+    }
+
+    #[tokio::test]
+    async fn the_owner_thresholds_decide_and_are_reported() {
+        let dir = TempDir::new("thresholds");
+        let s = state_with(
+            &dir,
+            Detector::with_rules(vec![Box::new(Medium)]),
+            Arc::new(DryRun::default()),
+        );
+        let owner = pair_owner(s.core());
+        // Strict: ask from low, deny from medium (ADR-0033).
+        let config = CoreConfig {
+            name: "lab".into(),
+            firewall: FirewallConfig::DryRun,
+            version: 1,
+            prev: String::new(),
+            enterprise_signer: None,
+            thresholds: guardian_core::wire::Thresholds {
+                ask_from: Severity::Low,
+                deny_from: Severity::Medium,
+            },
+        };
+        let signature: Signature = owner.sign(&guardian_core::wire::configure_message(&config));
+        let resp = handle(
+            s.clone(),
+            WITNESS,
+            addr(),
+            Request::Configure {
+                config,
+                signature: hex::encode(signature.to_der().as_bytes()),
+            },
+        )
+        .await;
+        assert!(matches!(resp, Response::Configured { .. }));
+
+        // The medium finding is denied at once instead of waiting for an answer.
+        assert!(matches!(
+            decide_req(&s, bash("ASK")).await,
+            Decision::Deny { .. }
+        ));
+        assert!(s.asks.pending().is_empty());
+
+        match handle(s.clone(), WITNESS, addr(), Request::Status).await {
+            Response::Status { status } => {
+                assert_eq!(status["thresholds"]["ask_from"], "low");
+                assert_eq!(status["thresholds"]["deny_from"], "medium");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
     }
 
     #[tokio::test]

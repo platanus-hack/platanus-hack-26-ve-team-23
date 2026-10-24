@@ -8,6 +8,18 @@ Every entry is written when the change is merged, under `Unreleased`.
 
 ## [Unreleased]
 
+### Added
+
+- ADR-0033: attention thresholds the owner sets from the app.
+  `CoreConfig.thresholds { ask_from, deny_from }` travels in the signed
+  configuration chain (left out of the JSON while default, so older
+  configurations keep their hash); the Core refuses thresholds that would
+  let a high finding through without asking, `decide` applies them, and
+  `Status` reports them. The app edits them in the configuration form and
+  shows them in Settings, next to a new "what HAWK does and does not do"
+  card. Two medium rules (`hawk.git.force-push`,
+  `hawk.fs.recursive-delete`) make "ask" happen with the shipped catalogue.
+
 ### Changed
 
 - Version 0.1.1: the first release built by `release.yml`. The v0.1.0

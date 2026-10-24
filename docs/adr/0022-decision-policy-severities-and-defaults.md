@@ -86,3 +86,5 @@ None.
 ## History
 
 - v1.0 (2026-10-24): Initial decision.
+- v1.1 (2026-10-24): the table above is now the default; the owner can move
+  the ask and deny thresholds within floors (ADR-0033).

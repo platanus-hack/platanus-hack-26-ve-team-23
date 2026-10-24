@@ -373,6 +373,10 @@ select { appearance: none; -webkit-appearance: none; padding-right: 38px; backgr
 .form-error { background: var(--ink); color: var(--on-ink); border-radius: 12px; padding: 10px 14px; font-size: var(--fs-1); font-weight: 500; }
 .inline-form { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
 .router { display: grid; gap: 14px; }
+.thresholds { display: grid; gap: 14px; border: 0; margin: 0; padding: 0; min-width: 0; }
+.thresholds legend { font-weight: 650; padding: 0; margin-bottom: 14px; }
+.scope-h { font-size: var(--fs-1); font-weight: 650; color: var(--ink-2); margin: 4px 0 10px; }
+.scope-h ~ .scope-h { margin-top: 18px; }
 
 /* Sheet ------------------------------------------------------------------------------------------------ */
 dialog.sheet { border: 0; padding: 0; background: transparent; color: var(--ink); width: 100%; max-width: 560px; max-height: 92vh; max-height: 92dvh; margin: auto auto 0; overflow: visible; }

@@ -322,6 +322,7 @@ pub fn summary(config: &CoreConfig) -> ConfigSummary {
         hash: hex::encode(config_hash(config)),
         enterprise: config.enterprise_signer.is_some(),
         enterprise_signer: config.enterprise_signer.clone(),
+        thresholds: config.thresholds,
     }
 }
 
@@ -487,6 +488,12 @@ impl Core {
                     ));
                 }
             }
+        }
+        if !config.thresholds.is_valid() {
+            return Err(CoreError::BadConfig(
+                "thresholds: a high finding must at least ask, and asking cannot start above denying"
+                    .into(),
+            ));
         }
         let expected_version = current.as_ref().map_or(1, |c| c.version + 1);
         if config.version != expected_version {
@@ -1158,7 +1165,37 @@ pub(crate) mod tests {
                 .map(|c| hex::encode(config_hash(c)))
                 .unwrap_or_default(),
             enterprise_signer: current.and_then(|c| c.enterprise_signer.clone()),
+            thresholds: current.map(|c| c.thresholds).unwrap_or_default(),
         }
+    }
+
+    #[test]
+    fn thresholds_travel_in_the_chain_and_keep_their_floors() {
+        let dir = TempDir::new("config-thresholds");
+        let core = Core::open(&dir.0).unwrap();
+        let (_, owner) = pair_with_owner(&core);
+
+        let mut v1 = next(None, "lab");
+        v1.thresholds = guardian_core::wire::Thresholds {
+            ask_from: Severity::Low,
+            deny_from: Severity::Medium,
+        };
+        let summary = core
+            .apply_config(&v1, &signed(&v1, &owner), ConfigSource::Owner)
+            .unwrap();
+        assert_eq!(summary.thresholds, v1.thresholds);
+        assert_eq!(core.config().unwrap().thresholds, v1.thresholds);
+
+        // A high finding allowed without asking breaks a floor: refused.
+        let mut lax = next(Some(&v1), "lab");
+        lax.thresholds = guardian_core::wire::Thresholds {
+            ask_from: Severity::Critical,
+            deny_from: Severity::Critical,
+        };
+        assert!(core
+            .apply_config(&lax, &signed(&lax, &owner), ConfigSource::Owner)
+            .is_err());
+        assert_eq!(core.config().unwrap().version, 1);
     }
 
     #[test]

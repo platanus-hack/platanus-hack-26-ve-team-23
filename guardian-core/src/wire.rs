@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     keys::CorePublic,
     machine::{Mac, Nic},
-    Decision, SignedHead, ToolCall,
+    Decision, Severity, SignedHead, ToolCall,
 };
 
 /// The Core's configuration (ADR-0024, ADR-0027). Each configuration is one
@@ -28,6 +28,42 @@ pub struct CoreConfig {
     /// change or remove it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enterprise_signer: Option<String>,
+    /// The owner's attention thresholds (ADR-0033). Left out of the JSON
+    /// while they are the defaults, so configurations signed before they
+    /// existed keep their hash and signature.
+    #[serde(default, skip_serializing_if = "Thresholds::is_default")]
+    pub thresholds: Thresholds,
+}
+
+/// From which severity HAWK asks the owner and from which it denies
+/// (ADR-0033). A critical finding always denies and quarantines, whatever
+/// these say.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Thresholds {
+    pub ask_from: Severity,
+    pub deny_from: Severity,
+}
+
+impl Default for Thresholds {
+    /// The table of ADR-0022: medium asks, high denies.
+    fn default() -> Self {
+        Self {
+            ask_from: Severity::Medium,
+            deny_from: Severity::High,
+        }
+    }
+}
+
+impl Thresholds {
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// The floors: a high finding at least asks, and asking starts at or
+    /// below denying.
+    pub fn is_valid(&self) -> bool {
+        self.ask_from <= Severity::High && self.ask_from <= self.deny_from
+    }
 }
 
 impl CoreConfig {
@@ -111,6 +147,10 @@ pub struct ConfigSummary {
     /// can keep it when it writes the next configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enterprise_signer: Option<String>,
+    /// The active attention thresholds (ADR-0033), so the app can show them
+    /// and keep them when it writes the next configuration.
+    #[serde(default)]
+    pub thresholds: Thresholds,
 }
 
 pub const CONFIGURE_DOMAIN: &[u8] = b"guardian.configure.v1";
@@ -483,11 +523,55 @@ mod tests {
             version: 1,
             prev: String::new(),
             enterprise_signer: None,
+            thresholds: Thresholds::default(),
         };
         let mut b = a.clone();
         assert_eq!(configure_message(&a), configure_message(&b));
         b.name = "other".into();
         assert_ne!(configure_message(&a), configure_message(&b));
+    }
+
+    #[test]
+    fn default_thresholds_keep_the_signed_bytes_of_older_configurations() {
+        let config = CoreConfig {
+            name: "lab".into(),
+            firewall: FirewallConfig::DryRun,
+            version: 1,
+            prev: String::new(),
+            enterprise_signer: None,
+            thresholds: Thresholds::default(),
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(!json.contains("thresholds"));
+        // A configuration written before thresholds existed reads as default.
+        let old: CoreConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(old.thresholds, Thresholds::default());
+
+        let mut strict = config.clone();
+        strict.thresholds = Thresholds {
+            ask_from: Severity::Low,
+            deny_from: Severity::Medium,
+        };
+        assert!(serde_json::to_string(&strict)
+            .unwrap()
+            .contains("\"ask_from\":\"low\""));
+        assert_ne!(configure_message(&config), configure_message(&strict));
+        assert_ne!(config_hash(&config), config_hash(&strict));
+    }
+
+    #[test]
+    fn thresholds_keep_their_floors() {
+        let t = |ask_from, deny_from| Thresholds {
+            ask_from,
+            deny_from,
+        };
+        assert!(Thresholds::default().is_valid());
+        assert!(t(Severity::Low, Severity::Medium).is_valid());
+        assert!(t(Severity::High, Severity::Critical).is_valid());
+        // A high finding must at least ask.
+        assert!(!t(Severity::Critical, Severity::Critical).is_valid());
+        // Asking cannot start above denying.
+        assert!(!t(Severity::High, Severity::Medium).is_valid());
     }
 
     #[test]
@@ -511,6 +595,7 @@ mod tests {
             version: 1,
             prev: String::new(),
             enterprise_signer: None,
+            thresholds: Thresholds::default(),
         };
         let mut second = first.clone();
         second.version = 2;

@@ -7,7 +7,11 @@ features, trained by `eval` (ADR-0014).
 - **Status:** the engine (`Detector`) and the policy are implemented, with a
   data-driven rule catalogue (`rules/default.json`, loaded by
   `catalogue::builtin()` and `catalogue::load_dir`) plus a code rule for
-  writes outside the workspace. The classifier is not built yet.
+  writes outside the workspace. The catalogue has high and critical rules
+  and two medium ones (force push, recursive delete) so "ask" happens. The
+  policy follows the owner's thresholds (`policy::apply_with`,
+  `Detector::decide_with`, ADR-0033); a critical finding always denies and
+  quarantines, a high one at least asks. The classifier is not built yet.
 
 ## Rule format
 
