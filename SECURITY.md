@@ -34,5 +34,9 @@ These are documented trade-offs, not open reports. See
   Google), a compromise of that account is a compromise of the owner
   credential. Erased weeks stay unreadable, because epoch keys are never
   derived from the passkey.
+- Owner passkeys are P-256 and not post-quantum; chain heads are signed
+  with hybrid Ed25519 + ML-DSA, whose Rust implementation is not audited.
+- Network containment depends on a supported firewall and on the Core's
+  router credentials; without a router it runs in dry-run mode.
 - A company that controls the Guardian and every phone can rewrite the
   record; public anchoring is a future option, not implemented.

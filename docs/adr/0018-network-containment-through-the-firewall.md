@@ -1,0 +1,100 @@
+# ADR-0018: Network containment through the firewall (MikroTik first, Cisco next)
+
+- **Status:** Proposed
+- **Date:** 2026-10-24
+- **Deciders:** Javier Hernandez, team-23
+
+## Context
+
+Denying a tool call stops one action. It does not stop an agent that has
+already started a process, opened a connection, or gained root on the host
+and bypassed its hook. Everything that runs on the compromised host can be
+switched off by the compromise: a kill switch inside the host, or one that
+only refuses writes to an evidence store, does not stop the agent.
+
+The network equipment between the host and the internet is outside the
+host's control. Cutting the host there contains it even if the host is fully
+compromised.
+
+## Options considered
+
+### Option 1: kill the agent process from the host daemon
+
+- Benefits: precise.
+- Drawbacks: the daemon runs on the compromised host; a root compromise
+  stops it first.
+
+### Option 2: firewall on the host (iptables, Windows Firewall)
+
+- Benefits: no extra hardware.
+- Drawbacks: same problem; root on the host removes the rule.
+
+### Option 3: the Core drives the network firewall
+
+- Benefits: the cut happens on a device the agent cannot reach; works
+  against a root compromise of the host.
+- Drawbacks: needs a supported router and credentials on the Core; a wrong
+  cut takes a machine offline.
+
+## Decision
+
+The Core contains a host by adding its address to a quarantine list on the
+network firewall. Quarantined hosts can reach only the Core; everything else
+is dropped. Adapters behind one trait:
+
+| Adapter | API | Order |
+|---|---|---|
+| MikroTik RouterOS 7 | REST over HTTPS (`/rest/ip/firewall/address-list`) | First, for the demo |
+| Cisco | Meraki Dashboard API, or ASA/FTD REST | Next |
+| Dry run | Records the action, touches nothing | Default when no router is configured |
+
+### Key points
+
+- **Triggers:** an evasion alert (ADR-0004), a host daemon that stops its
+  heartbeat (ADR-0015), a denied action of the highest severity (data
+  exfiltration, record tampering), or the owner from the app.
+- **Automatic, reversible by the owner:** the cut is immediate; lifting it
+  needs the owner passkey (ADR-0017). Both are events in the chain.
+- **Least privilege:** the router account used by the Core may only edit the
+  quarantine list, not the rest of the configuration. The rule that drops
+  quarantined traffic is installed once by the owner.
+- **The Core is never cut:** the quarantine rule allows the Core so the
+  record keeps flowing.
+
+## Dependencies and licences
+
+| Dependency | Version | Licence |
+|---|---|---|
+| hyper client over rustls (HTTPS to the router) | 1, 0.23 | MIT, Apache-2.0 OR ISC OR MIT |
+
+## Consequences
+
+### Positive
+
+- Containment that a root compromise of the host cannot undo; the clearest
+  difference from kill switches that live in the same machine.
+- Visible in the demo: the agent's exfiltration attempt dies at the router.
+
+### Tradeoffs
+
+- Needs a MikroTik (or Cisco) in the demo network; the dry-run adapter keeps
+  the demo working without one.
+- A false positive takes a machine offline until the owner lifts it;
+  thresholds are measured in ADR-0010.
+
+## Implementation
+
+### Next steps
+
+1. `Firewall` trait and dry-run adapter in the Core.
+2. MikroTik adapter and the one-time rule the owner installs.
+3. Cisco adapter.
+
+## Related decisions
+
+- ADR-0003, ADR-0004, ADR-0015: where the triggers come from.
+- ADR-0017: the owner lifts a quarantine.
+
+## History
+
+- v1.0 (2026-10-24): Initial decision.

@@ -59,6 +59,13 @@ edition, not implemented.
 
 ### Key points
 
+- **Integrity is not truth.** A chain, local or public, only proves that
+  what was sealed was not changed afterwards. If the component that seals
+  runs on the infected machine, the attacker decides what gets sealed:
+  omitted actions, invented events and signatures with stolen keys are
+  anchored as faithfully as real ones. That is why capture and sealing run
+  on the Core, a separate device, and why public anchoring adds nothing
+  against the central adversary.
 - **Events are encrypted in batches** with the weekly epoch key (ADR-0007);
   the chain covers the ciphertext, so integrity can be checked without
   reading the content.

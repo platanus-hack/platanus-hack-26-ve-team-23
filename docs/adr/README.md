@@ -51,6 +51,9 @@ supersedes it; the old one only has its status updated.
 | [0015](0015-three-edges-host-daemon-core-mobile.md) | Three edges: a daemon on every host, the Core on the Pi, the mobile app | Proposed |
 | [0016](0016-hyper-on-tokio-and-own-framed-protocol.md) | hyper directly on tokio for HTTP; our own framed protocol between edges | Proposed |
 | [0017](0017-core-pairing-and-passkeys.md) | The Core stays inactive until paired with a phone; the owner credential is a passkey | Proposed |
+| [0018](0018-network-containment-through-the-firewall.md) | Network containment through the firewall (MikroTik first, Cisco next) | Proposed |
+| [0019](0019-post-quantum-signatures-on-heads.md) | Hybrid post-quantum signatures on chain heads | Proposed |
+| [0020](0020-openrouter-upstream-and-key-custody.md) | OpenRouter as a remote upstream; provider keys live only on the Core | Proposed |
 
 ## Open questions
 

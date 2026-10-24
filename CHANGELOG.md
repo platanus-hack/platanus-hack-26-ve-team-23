@@ -25,6 +25,11 @@ Every entry is written when the change is merged, under `Unreleased`.
 - ADR-0015 to ADR-0017: three edges (host daemon, Core, mobile app), hyper
   on tokio instead of axum with our own framed protocol between edges, and
   pairing with passkeys (supersedes ADR-0008 for recovery).
+- ADR-0018 to ADR-0020: network containment through MikroTik and Cisco
+  firewalls, hybrid Ed25519 + ML-DSA signatures on heads, OpenRouter as a
+  remote upstream with the key held only by the Core. ADR-0006 now states
+  why a chain sealed on the infected machine proves nothing.
+- Roadmap with full scope in parallel streams.
 - `host-daemon` and `edge-net` crates; Guardian and daemon on hyper.
 - Docker: development container, Guardian image limited to 2 GB, smoke
   test, optional Ollama service on the GPU.
