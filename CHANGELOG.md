@@ -29,6 +29,9 @@ Every entry is written when the change is merged, under `Unreleased`.
   firewalls, hybrid Ed25519 + ML-DSA signatures on heads, OpenRouter as a
   remote upstream with the key held only by the Core. ADR-0006 now states
   why a chain sealed on the infected machine proves nothing.
+- ADR-0021: `integrations` crate with firewall adapters (OpenWrt,
+  MikroTik, Cisco) and event sinks (Kafka, webhook, CEF syslog); OpenWrt
+  added to ADR-0018.
 - Roadmap with full scope in parallel streams.
 - `host-daemon` and `edge-net` crates; Guardian and daemon on hyper.
 - Docker: development container, Guardian image limited to 2 GB, smoke

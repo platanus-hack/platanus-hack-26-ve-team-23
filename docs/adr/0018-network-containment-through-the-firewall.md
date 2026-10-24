@@ -1,4 +1,4 @@
-# ADR-0018: Network containment through the firewall (MikroTik first, Cisco next)
+# ADR-0018: Network containment through the firewall (OpenWrt and MikroTik first, Cisco next)
 
 - **Status:** Proposed
 - **Date:** 2026-10-24
@@ -44,6 +44,7 @@ is dropped. Adapters behind one trait:
 
 | Adapter | API | Order |
 |---|---|---|
+| OpenWrt (22.03+, fw4/nftables) | ubus JSON-RPC over HTTPS (`/ubus`), through a small rpcd plugin we ship that only adds, removes and lists addresses in an nftables set | First, for the demo |
 | MikroTik RouterOS 7 | REST over HTTPS (`/rest/ip/firewall/address-list`) | First, for the demo |
 | Cisco | Meraki Dashboard API, or ASA/FTD REST | Next |
 | Dry run | Records the action, touches nothing | Default when no router is configured |
@@ -56,7 +57,9 @@ is dropped. Adapters behind one trait:
 - **Automatic, reversible by the owner:** the cut is immediate; lifting it
   needs the owner passkey (ADR-0017). Both are events in the chain.
 - **Least privilege:** the router account used by the Core may only edit the
-  quarantine list, not the rest of the configuration. The rule that drops
+  quarantine list, not the rest of the configuration. On OpenWrt, the rpcd
+  ACL of the Core's user grants only the methods of our plugin
+  (`add`, `remove`, `list`); no shell, no `uci` access. The rule that drops
   quarantined traffic is installed once by the owner.
 - **The Core is never cut:** the quarantine rule allows the Core so the
   record keeps flowing.
@@ -77,8 +80,8 @@ is dropped. Adapters behind one trait:
 
 ### Tradeoffs
 
-- Needs a MikroTik (or Cisco) in the demo network; the dry-run adapter keeps
-  the demo working without one.
+- Needs an OpenWrt or MikroTik router (or Cisco) in the demo network; the
+  dry-run adapter keeps the demo working without one.
 - A false positive takes a machine offline until the owner lifts it;
   thresholds are measured in ADR-0010.
 
@@ -86,9 +89,12 @@ is dropped. Adapters behind one trait:
 
 ### Next steps
 
-1. `Firewall` trait and dry-run adapter in the Core.
-2. MikroTik adapter and the one-time rule the owner installs.
-3. Cisco adapter.
+1. `Firewall` trait and dry-run adapter in the `integrations` crate
+   (ADR-0021).
+2. OpenWrt rpcd plugin, its ACL and the nftables set and rule, as an
+   installable package.
+3. MikroTik adapter and the one-time rule the owner installs.
+4. Cisco adapter.
 
 ## Related decisions
 
@@ -98,3 +104,4 @@ is dropped. Adapters behind one trait:
 ## History
 
 - v1.0 (2026-10-24): Initial decision.
+- v1.1 (2026-10-24): OpenWrt added as a first adapter, before acceptance.
