@@ -5,7 +5,13 @@ non-Rust code in the repository: OpenCode loads plugins in JavaScript or
 TypeScript (ADR-0012), so this stays a thin shim with no logic.
 
 - **Runs on:** the PC (untrusted).
-- **Status:** planned. Implements ADR-0004.
+- **Status:** first version in `guardian.ts`. Implements ADR-0004.
+
+## Install
+
+Copy `guardian.ts` to `.opencode/plugin/` in the project (or to
+`~/.config/opencode/plugin/`), start the host daemon, and set
+`HOST_DAEMON_URL` if it does not listen on `http://127.0.0.1:7070`.
 
 ## What it does
 

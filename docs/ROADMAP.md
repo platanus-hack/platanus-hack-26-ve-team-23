@@ -6,11 +6,11 @@ Work runs in parallel streams; patterns and code are taken from Nepheral
 
 | # | Milestone | ADRs | Done when |
 |---|---|---|---|
-| M0 | Decisions recorded | 0001 to 0020 | ADRs accepted by the team |
+| M0 | Decisions recorded | 0001 to 0022 | ADRs accepted by the team |
 | M1 | Workspace skeleton | 0012, 0013 | `just check` green locally and in Docker (done locally) |
 | M2 | Agent under test | 0009 | OpenCode + Ollama on the 4070 through the Core proxy |
 | M3 | Evaluation set | 0010 | ~30 legitimate and ~30 attack tasks with a runner that resets the workspace |
-| M4 | Hook, daemon, decision | 0004, 0015 | Plugin -> daemon -> Core `/decide`; rules deny the attacks; fail closed end to end |
+| M4 | Hook, daemon, decision | 0004, 0015, 0022 | Plugin -> daemon -> Core `/decide`; rules deny the attacks; fail closed end to end (relay, engine and policy done; rules pending M3) |
 | M5 | Proxy and cross-check | 0004, 0016 | Proxy records streams; disabling the hook raises an evasion alert |
 | M6 | Network containment | 0018, 0020 | Evasion or exfiltration puts the host in the OpenWrt or MikroTik quarantine set; owner lifts it |
 | M6b | Event sinks | 0020 | Decisions, alerts and containment published to Kafka (container in compose), webhook and CEF syslog |

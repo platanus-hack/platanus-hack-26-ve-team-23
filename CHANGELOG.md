@@ -32,6 +32,12 @@ Every entry is written when the change is merged, under `Unreleased`.
   MikroTik, Cisco) and event sinks (Kafka, webhook, CEF syslog); OpenWrt
   added to ADR-0018.
 - Roadmap with full scope in parallel streams.
+- ADR-0021 (daemon attestation, challenge-response heartbeat, dead man's
+  switch, eBPF sensors) and ADR-0022 (severities and defaults: fail closed
+  on failure, not on silence); `docs/ACTION-TREE.md`.
+- First vertical slice: OpenCode plugin (`agent-hook/guardian.ts`) ->
+  host daemon relay -> Core `/decide` with the rule engine and policy;
+  denies when the daemon or the Core is unreachable.
 - `host-daemon` and `edge-net` crates; Guardian and daemon on hyper.
 - Docker: development container, Guardian image limited to 2 GB, smoke
   test, optional Ollama service on the GPU.

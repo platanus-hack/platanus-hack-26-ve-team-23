@@ -54,6 +54,8 @@ supersedes it; the old one only has its status updated.
 | [0018](0018-network-containment-through-the-firewall.md) | Network containment through the firewall (OpenWrt and MikroTik first, Cisco next) | Proposed |
 | [0019](0019-post-quantum-signatures-on-heads.md) | Hybrid post-quantum signatures on chain heads | Proposed |
 | [0020](0020-integrations-firewalls-and-event-sinks.md) | Integrations: firewall adapters and event sinks, starting with Kafka | Proposed |
+| [0021](0021-daemon-attestation-heartbeat-and-kernel-sensors.md) | Daemon attestation, challenge-response heartbeat and kernel sensors | Proposed |
+| [0022](0022-decision-policy-severities-and-defaults.md) | Decision policy: severities, outcomes and defaults | Proposed |
 
 ## Open questions
 

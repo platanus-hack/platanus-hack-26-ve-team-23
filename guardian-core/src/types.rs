@@ -25,6 +25,25 @@ pub enum Decision {
     },
 }
 
+/// How serious a finding is (ADR-0022). Ordered: the highest one decides.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Severity {
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
+/// One signal from a detection stage about a tool call.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Finding {
+    /// Stable identifier of the rule or stage, recorded with the decision.
+    pub rule: String,
+    pub severity: Severity,
+    pub reason: String,
+}
+
 impl Decision {
     pub fn deny(reason: impl Into<String>) -> Self {
         Self::Deny {
@@ -47,5 +66,12 @@ mod tests {
         assert_eq!(json, r#"{"decision":"deny","reason":"log deletion"}"#);
         let allow: Decision = serde_json::from_str(r#"{"decision":"allow"}"#).unwrap();
         assert!(allow.is_allow());
+    }
+
+    #[test]
+    fn severities_are_ordered() {
+        assert!(Severity::Critical > Severity::High);
+        assert!(Severity::High > Severity::Medium);
+        assert!(Severity::Medium > Severity::Low);
     }
 }

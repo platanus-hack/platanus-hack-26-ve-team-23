@@ -11,10 +11,11 @@ Platanus Hack 26: Caracas. Track: AI Security (AI control). Team 23.
 
 <img src="./project-logo.png" alt="Project logo" width="200" />
 
-> Status: workspace skeleton. The decisions are recorded as ADRs in
-> [`docs/adr`](docs/adr/README.md). The hash chain and the Guardian's
-> `/health` and `/decide` endpoints exist; detection denies everything until
-> the rules are written. Coding agents start with [AGENTS.md](AGENTS.md).
+> Status: first vertical slice. OpenCode plugin -> host daemon -> Core
+> `/decide` works end to end and fails closed; the rule engine and the
+> policy of ADR-0022 are in place, concrete rules come with the evaluation
+> set. Decisions are in [`docs/adr`](docs/adr/README.md); the full flow is
+> in [`docs/ACTION-TREE.md`](docs/ACTION-TREE.md). Coding agents start with [AGENTS.md](AGENTS.md).
 
 ## The problem
 

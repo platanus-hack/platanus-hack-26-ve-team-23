@@ -42,12 +42,20 @@ where
 }
 
 fn decide(state: &AppState, call: &ToolCall) -> Decision {
-    let decision = match state.detector.lock() {
+    let verdict = match state.detector.lock() {
         Ok(mut detector) => detector.decide(call),
-        Err(_) => Decision::deny("detector unavailable"),
+        Err(_) => return Decision::deny("detector unavailable"),
     };
-    tracing::info!(session = %call.session, tool = %call.tool, ?decision, "decided");
-    decision
+    // Quarantine (ADR-0018) is wired here once the integrations crate exists.
+    tracing::info!(
+        session = %call.session,
+        tool = %call.tool,
+        decision = ?verdict.decision,
+        findings = verdict.findings.len(),
+        contain = verdict.contain,
+        "decided"
+    );
+    verdict.decision
 }
 
 #[cfg(test)]
@@ -88,10 +96,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn valid_call_gets_a_decision() {
+    async fn call_without_findings_is_allowed() {
+        // ADR-0022: fail closed on failure, not on silence.
         let decision =
             post_decide(r#"{"session":"s","tool":"bash","args":{"command":"ls"},"cwd":"/w"}"#)
                 .await;
-        assert!(matches!(decision, Decision::Deny { .. }));
+        assert!(decision.is_allow());
     }
 }

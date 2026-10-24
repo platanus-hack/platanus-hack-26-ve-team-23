@@ -13,4 +13,4 @@ pub mod types;
 
 pub use chain::{verify, ChainError, Digest, HashChain};
 pub use event::{Event, EventKind};
-pub use types::{Decision, ToolCall};
+pub use types::{Decision, Finding, Severity, ToolCall};

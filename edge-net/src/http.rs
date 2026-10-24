@@ -13,6 +13,67 @@ use tokio::net::TcpListener;
 /// Response body used by every handler.
 pub type Body = Full<Bytes>;
 
+/// HTTP client used between edges (host daemon to Core).
+pub type Client = hyper_util::client::legacy::Client<
+    hyper_util::client::legacy::connect::HttpConnector,
+    Full<Bytes>,
+>;
+
+/// A client whose connection attempts give up after `connect_timeout`.
+pub fn client(connect_timeout: Duration) -> Client {
+    let mut connector = hyper_util::client::legacy::connect::HttpConnector::new();
+    connector.set_connect_timeout(Some(connect_timeout));
+    hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
+        .build(connector)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallError {
+    /// Bad URL or the request could not be built.
+    Request,
+    /// Connection failed or the whole call exceeded its timeout.
+    Unreachable,
+    /// The peer answered with a non-success status.
+    Status(u16),
+    /// The answer was too large or not the expected JSON.
+    Body(BodyError),
+}
+
+/// POSTs `body` as JSON and parses at most `max_response_bytes` of the answer.
+/// The whole call, connection included, is bounded by `timeout`.
+pub async fn post_json<T, R>(
+    client: &Client,
+    url: &str,
+    body: &T,
+    timeout: Duration,
+    max_response_bytes: usize,
+) -> Result<R, CallError>
+where
+    T: Serialize,
+    R: DeserializeOwned,
+{
+    let bytes = serde_json::to_vec(body).map_err(|_| CallError::Request)?;
+    let request = Request::post(url)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Full::new(Bytes::from(bytes)))
+        .map_err(|_| CallError::Request)?;
+    let call = async {
+        let response = client
+            .request(request)
+            .await
+            .map_err(|_| CallError::Unreachable)?;
+        if !response.status().is_success() {
+            return Err(CallError::Status(response.status().as_u16()));
+        }
+        read_json_body(response.into_body(), max_response_bytes)
+            .await
+            .map_err(CallError::Body)
+    };
+    tokio::time::timeout(timeout, call)
+        .await
+        .map_err(|_| CallError::Unreachable)?
+}
+
 /// A client that does not send its headers within this time is dropped.
 pub const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -59,14 +120,25 @@ pub enum BodyError {
     Malformed,
 }
 
-/// Reads at most `max_bytes` of the body, then parses it as JSON.
+/// Reads at most `max_bytes` of a request body, then parses it as JSON.
 pub async fn read_json<T, B>(req: Request<B>, max_bytes: usize) -> Result<T, BodyError>
 where
     T: DeserializeOwned,
     B: hyper::body::Body<Data = Bytes>,
     B::Error: Into<Box<dyn StdError + Send + Sync>>,
 {
-    let bytes = Limited::new(req.into_body(), max_bytes)
+    read_json_body(req.into_body(), max_bytes).await
+}
+
+/// Reads at most `max_bytes` of any body (request or response), then parses
+/// it as JSON.
+pub async fn read_json_body<T, B>(body: B, max_bytes: usize) -> Result<T, BodyError>
+where
+    T: DeserializeOwned,
+    B: hyper::body::Body<Data = Bytes>,
+    B::Error: Into<Box<dyn StdError + Send + Sync>>,
+{
+    let bytes = Limited::new(body, max_bytes)
         .collect()
         .await
         .map_err(|_| BodyError::Unreadable)?
