@@ -5,3 +5,4 @@
 *.key
 witness/gen/android
 witness/gen/apple
+guardian-data/

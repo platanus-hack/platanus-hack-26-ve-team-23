@@ -7,7 +7,7 @@ URL="${GUARDIAN_URL:-http://guardian:8080}"
 echo "health"
 curl -fsS "$URL/health" | grep -qx ok
 
-echo "valid call is decided (deny until rules exist)"
+echo "unpaired core denies a valid call"
 curl -fsS -X POST -H 'content-type: application/json' \
     -d '{"session":"smoke","tool":"bash","args":{"command":"rm -rf ~/.bash_history"},"cwd":"/work"}' \
     "$URL/decide" | grep -q '"decision":"deny"'
