@@ -1,6 +1,8 @@
 # agent-hook
 
-OpenCode plugin that asks the Guardian before every tool call.
+OpenCode plugin that asks the Guardian before every tool call. The only
+non-Rust code in the repository: OpenCode loads plugins in JavaScript or
+TypeScript (ADR-0012), so this stays a thin shim with no logic.
 
 - **Runs on:** the PC (untrusted).
 - **Status:** planned. Implements ADR-0004.

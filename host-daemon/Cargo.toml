@@ -1,0 +1,23 @@
+[package]
+name = "host-daemon"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "Daemon on every machine that runs agents: relay for hooks, sensors, heartbeat."
+
+[dependencies]
+guardian-core.workspace = true
+edge-net.workspace = true
+tokio.workspace = true
+hyper.workspace = true
+bytes.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+http-body-util.workspace = true
+
+[lints]
+workspace = true

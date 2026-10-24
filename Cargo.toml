@@ -1,0 +1,51 @@
+[workspace]
+members = [
+    "guardian-core",
+    "detect",
+    "llm-proxy",
+    "edge-net",
+    "guardian",
+    "host-daemon",
+    "eval",
+    "witness",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["team-23"]
+repository = "https://github.com/platanus-hack/platanus-hack-26-ve-team-23"
+publish = false
+
+[workspace.dependencies]
+guardian-core = { path = "guardian-core" }
+detect = { path = "detect" }
+llm-proxy = { path = "llm-proxy" }
+edge-net = { path = "edge-net" }
+
+tokio = { version = "1.36", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+hex = "0.4"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+bytes = "1"
+
+# Lints shared by every crate. `cargo clippy -- -D warnings` turns every
+# warning into an error in CI; tests may unwrap (see clippy.toml).
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+dbg_macro = "warn"
+todo = "warn"
+print_stdout = "warn"

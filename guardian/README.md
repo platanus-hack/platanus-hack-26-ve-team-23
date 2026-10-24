@@ -1,27 +1,33 @@
 # guardian
 
-The monitor. Decides on tool calls, records everything, and reports to the
-phone.
+The daemon on the Raspberry Pi. Wires `detect`, `llm-proxy` and
+`guardian-core` together.
 
-- **Runs on:** Raspberry Pi, 2 GB of RAM, Linux.
-- **Status:** planned. Implements ADR-0003, ADR-0004, ADR-0005, ADR-0006,
-  ADR-0007.
+- **Runs on:** Raspberry Pi, 2 GB of RAM, Linux (arm64). In Docker, limited
+  to 2 GB to match.
+- **Status:** `GET /health` and `POST /decide` implemented; `/decide` always
+  denies until the rules exist. Proxy, cross-check, chain store and delivery
+  to the witness planned.
 
-## Parts
+## Endpoints
 
-| Part | Responsibility |
+| Endpoint | Purpose |
 |---|---|
-| Decision API | `POST /decide` for the hook: allow, deny or ask |
-| Detectors | Rules on the call and the last N calls; small classifier; optional ~350M model |
-| LLM proxy | OpenAI-compatible endpoint that forwards to Ollama on the PC and records requests and responses |
-| Cross-check | Matches proposed tool calls (proxy) with hook requests; mismatch raises an evasion alert |
-| Hash chain | Appends encrypted event batches; signs heads and sends them to the phone |
-| Opening | Hands out encrypted batches only for a valid, unexpired request signed by the owner |
+| `GET /health` | Liveness, returns `ok` |
+| `POST /decide` | Body: `ToolCall` JSON. Answer: `{"decision":"allow"}`, `{"decision":"deny","reason":...}` or `{"decision":"ask","reason":...}` |
+
+Configuration: `GUARDIAN_ADDR` (default `0.0.0.0:8080`), `RUST_LOG`.
 
 ## What it must never do
 
-- Allow an action when a detector fails or times out.
+- Allow an action when a detector fails, the body is malformed or too large
+  (256 KiB cap), or a lock is poisoned.
 - Run any model of 1.5B parameters or above.
 - Store decryption keys for past epochs.
 - Accept connections from the PC other than the decision and proxy
   endpoints.
+
+## Tests
+
+`cargo test -p guardian`, and against a running instance
+`docker compose run --rm smoke`.

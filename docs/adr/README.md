@@ -41,10 +41,16 @@ supersedes it; the old one only has its status updated.
 | [0005](0005-detection-rules-then-small-classifier.md) | Detection: rules first, small classifier second, optional small LLM | Proposed |
 | [0006](0006-local-hash-chain-no-blockchain.md) | A local hash chain with a phone witness; no blockchain | Proposed |
 | [0007](0007-two-key-log-access-and-editions.md) | Two-key log access; personal and enterprise editions | Proposed |
-| [0008](0008-owner-recovery-with-mnemonic.md) | Owner recovery with a mnemonic; weekly keys are not recoverable | Proposed |
+| [0008](0008-owner-recovery-with-mnemonic.md) | Owner recovery with a mnemonic; weekly keys are not recoverable | Superseded by ADR-0017 |
 | [0009](0009-agent-under-test-opencode-ollama.md) | Agent under test: OpenCode with Ollama on the PC | Proposed |
 | [0010](0010-evaluation-before-detection.md) | Build the evaluation set before the detectors | Proposed |
-| [0011](0011-dependency-licences.md) | Only permissively licensed dependencies | Proposed |
+| [0011](0011-dependency-licences.md) | Only permissively licensed dependencies, enforced by cargo deny | Proposed |
+| [0012](0012-rust-workspace-and-crate-boundaries.md) | One Rust workspace with the record format at the bottom | Proposed |
+| [0013](0013-tauri-front-end.md) | Tauri 2 for every front end, desktop and APK from one crate | Proposed |
+| [0014](0014-own-implementation-established-primitives.md) | Our own implementation of the monitor, established crates for primitives | Proposed |
+| [0015](0015-three-edges-host-daemon-core-mobile.md) | Three edges: a daemon on every host, the Core on the Pi, the mobile app | Proposed |
+| [0016](0016-hyper-on-tokio-and-own-framed-protocol.md) | hyper directly on tokio for HTTP; our own framed protocol between edges | Proposed |
+| [0017](0017-core-pairing-and-passkeys.md) | The Core stays inactive until paired with a phone; the owner credential is a passkey | Proposed |
 
 ## Open questions
 

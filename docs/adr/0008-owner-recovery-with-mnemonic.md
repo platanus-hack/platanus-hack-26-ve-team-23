@@ -1,6 +1,6 @@
 # ADR-0008: Owner recovery with a mnemonic; weekly keys are not recoverable
 
-- **Status:** Proposed
+- **Status:** Superseded by ADR-0017
 - **Date:** 2026-10-24
 - **Deciders:** Javier Hernandez, team-23
 

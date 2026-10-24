@@ -1,0 +1,32 @@
+[package]
+name = "witness"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "Witness app: one Tauri 2 crate for the desktop build and the Android APK."
+
+# staticlib and cdylib are what Tauri links into the Android APK; rlib is
+# for the desktop binary and for tests.
+[lib]
+name = "witness_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "witness"
+path = "src/main.rs"
+
+[dependencies]
+guardian-core.workspace = true
+tauri = { version = "2", features = [] }
+serde.workspace = true
+serde_json.workspace = true
+hex.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[lints]
+workspace = true

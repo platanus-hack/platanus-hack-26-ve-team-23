@@ -1,0 +1,70 @@
+# Local test environment.
+#
+#   docker compose run --rm check          fmt, clippy and tests (just check)
+#   docker compose run --rm audit          cargo deny
+#   docker compose up -d guardian          the Guardian, limited like the Pi
+#   docker compose run --rm smoke          smoke test against it
+#   docker compose --profile agent up -d   adds Ollama on the GPU
+
+services:
+  check:
+    build:
+      context: .
+      dockerfile: docker/dev.Dockerfile
+    volumes:
+      - .:/work
+      - cargo-registry:/usr/local/cargo/registry
+      - cargo-target:/cargo-target
+    command: ["just", "check"]
+
+  audit:
+    build:
+      context: .
+      dockerfile: docker/dev.Dockerfile
+    volumes:
+      - .:/work
+      - cargo-registry:/usr/local/cargo/registry
+    command: ["just", "audit"]
+
+  guardian:
+    build:
+      context: .
+      dockerfile: docker/guardian.Dockerfile
+    ports:
+      - "8080:8080"
+    # Same memory as the Raspberry Pi (ADR-0003), so anything that does not
+    # fit there fails here first.
+    mem_limit: 2g
+    cpus: 4
+    read_only: true
+
+  smoke:
+    image: curlimages/curl:8.10.1
+    depends_on:
+      guardian:
+        condition: service_healthy
+    volumes:
+      - ./docker/smoke.sh:/smoke.sh:ro
+    entrypoint: ["sh", "/smoke.sh"]
+
+  ollama:
+    profiles: ["agent"]
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+    environment:
+      - OLLAMA_CONTEXT_LENGTH=32768
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  cargo-registry:
+  cargo-target:
+  ollama:

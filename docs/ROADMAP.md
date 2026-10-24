@@ -5,7 +5,8 @@ ADRs it implements.
 
 | # | Milestone | ADRs | Done when |
 |---|---|---|---|
-| M0 | Decisions recorded | 0001 to 0011 | ADRs accepted by the team |
+| M0 | Decisions recorded | 0001 to 0014 | ADRs accepted by the team |
+| M0.5 | Workspace skeleton | 0012, 0013 | `just check` green locally and in Docker; Guardian image runs on the Pi; witness APK builds |
 | M1 | Agent under test | 0009 | OpenCode + Ollama complete 5 tool-use tasks; VRAM and success rate recorded |
 | M2 | Evaluation set | 0010 | ~30 legitimate and ~30 attack tasks with a runner that resets the workspace |
 | M3 | Proxy on the Pi | 0003, 0004 | OpenCode works through the proxy; latency measured |

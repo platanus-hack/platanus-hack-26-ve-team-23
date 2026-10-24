@@ -30,5 +30,9 @@ These are documented trade-offs, not open reports. See
   published with the evaluation results.
 - In the personal edition, someone holding the unlocked phone can read the
   record.
+- If the owner keeps the passkey in a synced password manager (for example
+  Google), a compromise of that account is a compromise of the owner
+  credential. Erased weeks stay unreadable, because epoch keys are never
+  derived from the passkey.
 - A company that controls the Guardian and every phone can rewrite the
   record; public anchoring is a future option, not implemented.

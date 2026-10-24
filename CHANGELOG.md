@@ -15,3 +15,16 @@ Every entry is written when the change is merged, under `Unreleased`.
 - Repository structure, standards and agent instructions adapted from
   Nepheral.
 - Tentative project name: HAWK (Hardware Autonomous Watcher & Keeper).
+- ADR-0012 to ADR-0014: Rust workspace, Tauri 2 front end (desktop and APK
+  from one crate), own implementation on established primitives.
+- Cargo workspace: `guardian-core` (event encoding and hash chain with
+  tests), `detect`, `llm-proxy`, `guardian` (`/health`, fail-closed
+  `/decide`), `eval`, `witness` (Tauri 2).
+- Clippy lints with warnings as errors, `justfile`, `cargo deny`
+  configuration.
+- ADR-0015 to ADR-0017: three edges (host daemon, Core, mobile app), hyper
+  on tokio instead of axum with our own framed protocol between edges, and
+  pairing with passkeys (supersedes ADR-0008 for recovery).
+- `host-daemon` and `edge-net` crates; Guardian and daemon on hyper.
+- Docker: development container, Guardian image limited to 2 GB, smoke
+  test, optional Ollama service on the GPU.

@@ -1,0 +1,7 @@
+/target
+**/*.rs.bk
+.env
+*.pem
+*.key
+witness/gen/android
+witness/gen/apple

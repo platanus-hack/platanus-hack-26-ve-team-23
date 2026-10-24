@@ -30,16 +30,29 @@ stop and say so; do not silently change the design.
   evaluation set in [eval](eval/README.md), not the other way round
   (ADR-0010).
 - **Licences:** only those allowed by
-  [ADR-0011](docs/adr/0011-dependency-licences.md).
+  [ADR-0011](docs/adr/0011-dependency-licences.md), checked by `just audit`.
+- **Stack:** Rust back end in one workspace (ADR-0012); Tauri 2 front end,
+  one crate for desktop and APK (ADR-0013); our own monitor code, never our
+  own cryptography (ADR-0014). Patterns may be copied from Nepheral-core,
+  which the team owns.
+- **Before every commit:** `just check` must pass (fmt, clippy with
+  warnings as errors, tests). Without a local toolchain:
+  `docker compose run --rm check`.
 
 ## Where things are
 
 | Path | What |
 |---|---|
-| `agent-hook/` | OpenCode plugin (PC) |
-| `guardian/` | Decision API, LLM proxy, detectors, hash chain (Pi) |
-| `witness/` | Phone side: heads, alerts, keys |
+| `guardian-core/` | Event encoding, hash chain, shared types; no I/O (all crates depend on it) |
+| `detect/` | Rules and classifier |
+| `llm-proxy/` | OpenAI-compatible proxy |
+| `edge-net/` | HTTP on hyper and tokio (no web framework, ADR-0016) |
+| `guardian/` | The Core on the Pi; inactive until paired (ADR-0017) |
+| `host-daemon/` | Daemon on every machine running agents; relay and sensors, never decides (ADR-0015) |
+| `witness/` | Tauri 2 app: desktop and APK from the same crate |
 | `eval/` | Tasks, runner, metrics |
+| `agent-hook/` | Thin TypeScript OpenCode plugin (the only non-Rust code) |
+| `docker/`, `docker-compose.yml` | Dev container, Guardian image, smoke test |
 | `docs/adr/` | Decisions |
 | `docs/rfcs/` | Proposals under discussion |
 | `docs/standards/` | How work is done |

@@ -1,0 +1,13 @@
+[package]
+name = "llm-proxy"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "OpenAI-compatible proxy: forwarding, streaming and tool-call extraction."
+
+[dependencies]
+guardian-core.workspace = true
+
+[lints]
+workspace = true

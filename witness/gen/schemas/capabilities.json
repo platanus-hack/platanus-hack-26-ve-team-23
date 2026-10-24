@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Main window: core IPC (invoke and events) only","local":true,"windows":["main"],"permissions":["core:default"]}}

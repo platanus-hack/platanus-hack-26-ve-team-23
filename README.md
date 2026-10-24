@@ -11,9 +11,10 @@ Platanus Hack 26: Caracas. Track: AI Security (AI control). Team 23.
 
 <img src="./project-logo.png" alt="Project logo" width="200" />
 
-> Status: design phase. The decisions are recorded as ADRs in
-> [`docs/adr`](docs/adr/README.md); no component is implemented yet. Coding
-> agents start with [AGENTS.md](AGENTS.md).
+> Status: workspace skeleton. The decisions are recorded as ADRs in
+> [`docs/adr`](docs/adr/README.md). The hash chain and the Guardian's
+> `/health` and `/decide` endpoints exist; detection denies everything until
+> the rules are written. Coding agents start with [AGENTS.md](AGENTS.md).
 
 ## The problem
 
@@ -47,17 +48,49 @@ Ollama (RTX 4070) <---forwarded---- cross-check hook vs proxy ---alert-> alerts
    to the phone, so a rewritten record no longer matches.
 4. If the proxy saw a tool call that never reached the hook, the agent
    bypassed its monitor, and the phone gets an alert.
-5. Reading the record needs the opening key and the weekly decryption key,
+5. Reading the record needs the owner passkey and the weekly decryption key,
    both on the phone.
+
+A new Core does nothing until it is paired with the owner's phone
+([ADR-0017](docs/adr/0017-core-pairing-and-passkeys.md)).
 
 ## Components
 
-| Layer | Directory | Runs on | Responsibility |
+Back end in Rust, one Cargo workspace
+([ADR-0012](docs/adr/0012-rust-workspace-and-crate-boundaries.md)); front end
+in Tauri 2, one crate for desktop and APK
+([ADR-0013](docs/adr/0013-tauri-front-end.md)); the monitor is our own
+implementation on top of established primitives
+([ADR-0014](docs/adr/0014-own-implementation-established-primitives.md)).
+
+| Layer | Crate | Runs on | Responsibility |
 |---|---|---|---|
-| Agent hook | [agent-hook](agent-hook/README.md) | PC | OpenCode plugin: asks the Guardian before every tool call, fails closed |
-| Guardian | [guardian](guardian/README.md) | Raspberry Pi | Decision API, LLM proxy, detectors, cross-check, hash chain |
-| Witness | [witness](witness/README.md) | Phone | Stores signed heads, receives alerts, holds the two keys |
-| Evaluation | [eval](eval/README.md) | PC + Pi | Legitimate and attack tasks, runner, metrics |
+| Record format | [guardian-core](guardian-core/README.md) | everywhere | Event encoding, hash chain, shared types. No I/O |
+| Detection | [detect](detect/README.md) | Raspberry Pi | Rules, sequence rules, classifier |
+| Proxy | [llm-proxy](llm-proxy/README.md) | Raspberry Pi | OpenAI-compatible proxy to Ollama, tool-call extraction |
+| Networking | [edge-net](edge-net/README.md) | Core and hosts | HTTP on hyper and tokio; framed protocol between edges |
+| Core | [guardian](guardian/README.md) | Raspberry Pi | Daemon: pairing, `/decide`, proxy, cross-check, chain store |
+| Host daemon | [host-daemon](host-daemon/README.md) | Every machine running agents | Relays hooks to the Core, sensors, heartbeat; never decides |
+| Witness | [witness](witness/README.md) | Phone (APK) and desktop | Tauri 2 app: heads, alerts, keys, verifier |
+| Evaluation | [eval](eval/README.md) | PC + Pi | Tasks, runner, metrics, classifier training |
+| Agent hook | [agent-hook](agent-hook/README.md) | PC | Thin TypeScript OpenCode plugin; asks the Guardian, fails closed |
+
+## Build and test
+
+```sh
+just check          # fmt, clippy (warnings are errors) and tests
+just guardian       # run the Guardian on :8080
+just witness        # run the witness on the desktop
+just witness-apk    # build the witness APK (Android SDK and NDK)
+```
+
+With Docker, no local toolchain is needed:
+
+```sh
+docker compose run --rm check     # fmt, clippy and tests in a container
+docker compose up -d guardian     # Guardian limited to 2 GB, like the Pi
+docker compose run --rm smoke     # it answers and fails closed
+```
 
 The agent under test is OpenCode with a 7B to 8B model served by Ollama on
 the PC ([ADR-0009](docs/adr/0009-agent-under-test-opencode-ollama.md)). The
@@ -84,6 +117,14 @@ same proxy can front the Claude or OpenAI APIs.
 | How work is done | [docs/standards](docs/standards/README.md), [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Reporting a vulnerability | [SECURITY.md](SECURITY.md) |
 | What changed | [CHANGELOG.md](CHANGELOG.md) |
+
+## Licence
+
+Not chosen yet. Until it is, no licence is granted. Whatever it becomes,
+every dependency must use a licence from the allow list in
+[ADR-0011](docs/adr/0011-dependency-licences.md) (MIT, Apache-2.0, BSD,
+ISC and similar; no GPL, LGPL or AGPL, no non-commercial licences), checked
+by `just audit`.
 
 ## Team
 

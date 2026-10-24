@@ -1,4 +1,4 @@
-# ADR-0011: Only permissively licensed dependencies
+# ADR-0011: Only permissively licensed dependencies, enforced by cargo deny
 
 - **Status:** Proposed
 - **Date:** 2026-10-24
@@ -7,47 +7,82 @@
 ## Context
 
 The project licence is not decided yet. Whatever it is, the code must stay
-free to relicense, and models must be usable in a commercial product later.
+free to relicense, models must be usable in a commercial product later, and
+code may be shared with Nepheral, whose dependency policy is Nepheral
+ADR-0018. Rust links statically, so a copyleft dependency would impose its
+terms on the whole binary.
 
 ## Options considered
 
-### Option 1: accept any licence
+### Option 1: review licences case by case in pull requests
 
-- Benefits: the widest choice.
-- Drawbacks: copyleft or non-commercial terms could block the licence chosen
-  later.
+- Benefits: no tooling.
+- Drawbacks: transitive dependencies go unnoticed.
 
-### Option 2: permissive licences only
+### Option 2: an allow list, recorded here and enforced in CI
 
-- Benefits: keeps every licensing option open.
-- Drawbacks: excludes some models and libraries.
+- Benefits: every dependency, direct or transitive, is checked on every
+  pull request.
+- Drawbacks: a useful library under an excluded licence cannot be used.
 
 ## Decision
 
-Libraries, models and datasets are accepted only under MIT, Apache-2.0,
-BSD-2-Clause, BSD-3-Clause, ISC, Zlib, Unicode-3.0 or CC0-1.0. Anything else
-needs a new ADR. Tools used only to run the demo and not shipped (OpenCode,
-Ollama) are listed with their licence but do not constrain the product.
+The same allow list as Nepheral ADR-0018, so code moves between the two
+projects without a licence review:
+
+| Licence | Notes |
+|---|---|
+| MIT, MIT-0, Apache-2.0, Apache-2.0 WITH LLVM-exception | Permissive |
+| BSD-1-Clause, BSD-2-Clause, BSD-3-Clause, 0BSD, ISC, Zlib, BSL-1.0 | Permissive |
+| Unlicense, CC0-1.0 | Public-domain dedications |
+| Unicode-3.0, CDLA-Permissive-2.0 | Unicode tables and certificate data |
+| MPL-2.0 | Only for crates used unmodified |
+
+Not allowed: GPL, LGPL, AGPL; source-available licences on a dependency;
+non-commercial or no-derivatives licences; custom model licences (for
+example some Llama and Gemma releases); anything without a clear licence.
+
+Tools used only to run the demo and not shipped (OpenCode, Ollama) are
+listed with their licence but do not constrain the product.
+
+### Key points
+
+- `cargo deny check` runs the list in `deny.toml` on every pull request.
+- Every ADR and RFC lists the dependencies it adds, with their licences.
 
 ## Dependencies and licences
 
-None.
+| Dependency | Version | Licence |
+|---|---|---|
+| cargo-deny (tool) | latest | MIT OR Apache-2.0 |
 
 ## Consequences
 
 ### Positive
 
-- The licence of the project can be chosen after the hackathon.
+- The project licence can be chosen after the hackathon.
+- Code can be shared with Nepheral in both directions.
 
 ### Tradeoffs
 
-- Models under custom licences (for example some Llama and Gemma releases)
-  are excluded from the product.
+- Some models and libraries are excluded.
+
+## Implementation
+
+### Where it lives
+
+- `deny.toml`.
 
 ## Related decisions
 
 - Every ADR lists its dependencies against this list.
 
+## References
+
+- Nepheral ADR-0018.
+
 ## History
 
 - v1.0 (2026-10-24): Initial decision.
+- v1.1 (2026-10-24): Aligned with Nepheral ADR-0018 and enforced with
+  `cargo deny`, before acceptance.

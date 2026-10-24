@@ -1,0 +1,16 @@
+[package]
+name = "detect"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "Rules, sequence rules and classifier that decide on tool calls."
+
+[dependencies]
+guardian-core.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,16 @@
+[package]
+name = "guardian-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "Event format, hash chain and shared types. No I/O, no async."
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+hex.workspace = true
+
+[lints]
+workspace = true

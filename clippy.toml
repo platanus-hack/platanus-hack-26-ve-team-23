@@ -1,0 +1,5 @@
+# Tests may unwrap and expect; production code may not (Cargo.toml lints).
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-print-in-tests = true
