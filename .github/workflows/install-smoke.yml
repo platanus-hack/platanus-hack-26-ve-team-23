@@ -1,0 +1,80 @@
+# Runs the landing's one-line installer on clean machines, exactly as a user
+# would, and checks what it installed (ADR-0032). Started by hand or after a
+# release finishes.
+
+name: install-smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      site:
+        description: "Landing that serves install.sh and /downloads/"
+        default: "https://hawkeeper.xyz"
+  workflow_run:
+    workflows: [release]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    name: curl | sh on ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    env:
+      SITE: ${{ github.event.inputs.site || 'https://hawkeeper.xyz' }}
+    steps:
+      - name: Install as a user would
+        run: curl -fsSL "$SITE/install.sh" | sh -s -- --core 127.0.0.1:7443
+      - name: What it installed
+        run: |
+          test -x /usr/local/bin/hawk-host-daemon
+          getent passwd hawk
+          systemctl is-enabled hawk-host-daemon
+          sleep 3
+          systemctl is-active hawk-host-daemon
+          sudo journalctl -u hawk-host-daemon -n 20 --no-pager
+          test -f "$HOME/.config/opencode/plugin/hawk.ts"
+          file /usr/local/bin/hawk-host-daemon
+      - name: Uninstall
+        run: |
+          curl -fsSL "$SITE/install.sh" | sh -s -- --uninstall
+          ! test -e /usr/local/bin/hawk-host-daemon
+          ! systemctl is-enabled hawk-host-daemon 2>/dev/null
+
+  macos:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Apple Silicon and Intel.
+        runner: [macos-14, macos-15-intel]
+    name: curl | sh on ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    env:
+      SITE: ${{ github.event.inputs.site || 'https://hawkeeper.xyz' }}
+    steps:
+      - name: Install as a user would
+        run: curl -fsSL "$SITE/install.sh" | sh -s -- --core 127.0.0.1:7443
+      - name: What it installed
+        run: |
+          test -x "$HOME/.local/bin/hawk-host-daemon"
+          file "$HOME/.local/bin/hawk-host-daemon"
+          test -f "$HOME/.config/opencode/plugin/hawk.ts"
+      - name: The daemon starts
+        run: |
+          mkdir -p "$RUNNER_TEMP/hawk"
+          HOST_DAEMON_DATA_DIR="$RUNNER_TEMP/hawk" GUARDIAN_CORE=127.0.0.1:7443 \
+            "$HOME/.local/bin/hawk-host-daemon" > "$RUNNER_TEMP/daemon.log" 2>&1 &
+          pid=$!
+          sleep 5
+          cat "$RUNNER_TEMP/daemon.log"
+          kill -0 "$pid"
+          kill "$pid"
