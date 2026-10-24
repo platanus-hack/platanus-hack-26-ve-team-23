@@ -70,18 +70,71 @@ def _human(n):
     return str(n)
 
 
+# What each file of a release built by release.yml is, grouped for people.
+GROUPS = [
+    "App del dueño",
+    "Programa para cada computadora",
+    "HAWK Core, para el equipo dedicado",
+    "Plugin de OpenCode",
+    "Verificación",
+    "Otros",
+]
+KINDS = [
+    (re.compile(r"android.*\.apk$"), 0, "Android. Versión de prueba, firmada en modo debug."),
+    (re.compile(r"universal-macos\.dmg$"), 0, "macOS, Apple Silicon e Intel."),
+    (re.compile(r"windows-setup\.exe$"), 0, "Windows 10 y 11."),
+    (re.compile(r"\.deb$"), 0, "Linux: Debian, Ubuntu y derivadas."),
+    (re.compile(r"\.AppImage$"), 0, "Linux: cualquier distribución."),
+    (re.compile(r"^hawk-core-.*-aarch64-linux\.tar\.gz$"), 2, "Raspberry Pi y otros equipos ARM de 64 bits con Linux."),
+    (re.compile(r"^hawk-core-.*-x86_64-linux\.tar\.gz$"), 2, "Equipos x86_64 con Linux."),
+    (re.compile(r"^hawk-\d.*-aarch64-linux\.tar\.gz$"), 1, "Linux ARM de 64 bits. Lo instala install.sh."),
+    (re.compile(r"^hawk-\d.*-x86_64-linux\.tar\.gz$"), 1, "Linux x86_64. Lo instala install.sh."),
+    (re.compile(r"^hawk-\d.*-aarch64-macos\.tar\.gz$"), 1, "macOS Apple Silicon. Lo instala install.sh."),
+    (re.compile(r"^hawk-\d.*-x86_64-macos\.tar\.gz$"), 1, "macOS Intel. Lo instala install.sh."),
+    (re.compile(r"^hawk-\d.*-x86_64-windows\.zip$"), 1, "Windows x86_64: descomprime y corre host-daemon.exe."),
+    (re.compile(r"^(hawk-opencode-plugin|guardian)\.ts$"), 3, "Le pregunta a HAWK antes de cada herramienta del agente. install.sh lo instala y lo comprueba."),
+    (re.compile(r"^SHA256SUMS$"), 4, "Suma SHA-256 de cada archivo de esta versión."),
+    (re.compile(r"^SHA256SUMS\.minisig$"), 4, "Firma minisign de SHA256SUMS."),
+]
+
+
+def _kind(name):
+    """(group, order inside the group, description) of a release file."""
+    for order, (pattern, group, text) in enumerate(KINDS):
+        if pattern.search(name):
+            return group, order, text
+    return len(GROUPS) - 1, len(KINDS), ""
+
+
+def _row(version, f, text):
+    href = f'v{html.escape(version)}/{html.escape(f["name"])}'
+    return (
+        f'<tr><td><a href="{href}">{html.escape(f["name"])}</a>'
+        f'{"<span>" + html.escape(text) + "</span>" if text else ""}</td>'
+        f'<td>{html.escape(_human(f["size"]))}</td>'
+        f'<td><code>{html.escape(f["sha256"])}</code></td></tr>'
+    )
+
+
 def _index(releases):
     rows = []
     for rel in releases:
-        rows.append(f'<h2>HAWK {html.escape(rel["version"])}</h2><table><tbody>')
-        for f in rel["files"]:
-            href = f'v{html.escape(rel["version"])}/{html.escape(f["name"])}'
-            rows.append(
-                f'<tr><td><a href="{href}">{html.escape(f["name"])}</a></td>'
-                f'<td>{html.escape(_human(f["size"]))}</td>'
-                f'<td><code>{html.escape(f["sha256"])}</code></td></tr>'
-            )
-        rows.append("</tbody></table>")
+        version = rel["version"]
+        rows.append(f"<h2>HAWK {html.escape(version)}</h2>")
+        files = rel["files"]
+        # Releases built by release.yml carry a hawk-core archive; older ones
+        # were put together by hand and are listed as they are.
+        if not any(f["name"].startswith("hawk-core-") for f in files):
+            rows.append("<p>Versión armada a mano, anterior al proceso de releases; su contenido está en sus notas.</p>")
+            rows.append("<table><tbody>" + "".join(_row(version, f, "") for f in files) + "</tbody></table>")
+            continue
+        by_group = {}
+        for f in files:
+            group, order, text = _kind(f["name"])
+            by_group.setdefault(group, []).append((order, f["name"], _row(version, f, text)))
+        for group in sorted(by_group):
+            rows.append(f"<h3>{html.escape(GROUPS[group])}</h3>")
+            rows.append("<table><tbody>" + "".join(r for _, _, r in sorted(by_group[group])) + "</tbody></table>")
     body = "\n".join(rows) if rows else "<p>No hay versiones publicadas todavía.</p>"
     return f"""<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -94,13 +147,15 @@ def _index(releases):
 body{{margin:0;background:var(--ground);color:var(--ink);font:400 16px/1.55 Saira,system-ui,sans-serif}}
 main{{max-width:1100px;margin:0 auto;padding:48px 16px}}
 h1{{font-size:clamp(34px,5vw,56px);font-stretch:116%;font-weight:640;letter-spacing:-.03em;margin:0 0 8px}}
-h2{{margin:48px 0 12px}} p{{color:var(--ink2)}} a{{color:var(--ink);font-weight:600}}
+h2{{margin:56px 0 4px;font-size:30px}} h3{{margin:24px 0 6px;font-size:18px}} p{{color:var(--ink2)}} a{{color:var(--ink);font-weight:600}}
 table{{width:100%;border-collapse:separate;border-spacing:0 4px}} td{{background:var(--raised);padding:10px 12px;vertical-align:top}}
+table{{table-layout:fixed}} td:nth-child(1){{width:48%}} td:nth-child(2){{width:84px;white-space:nowrap}}
+td span{{display:block;color:var(--ink2);font-size:14px;margin-top:2px}}
 code{{font:12px/1.4 "JetBrains Mono",monospace;word-break:break-all;color:var(--ink2)}}
-@media (max-width:640px){{td:nth-child(3){{display:none}}}}
+@media (max-width:640px){{td:nth-child(3){{display:none}} td:nth-child(1){{width:auto}}}}
 </style></head><body><main>
 <h1>Descargas</h1>
-<p>Cada archivo aparece en <code>SHA256SUMS</code> de su versión. El instalador de una línea está en <a href="../install.sh">install.sh</a>.</p>
+<p>Para empezar, sigue la <a href="../#instalar">guía de instalación</a>: en Linux y macOS, <a href="../install.sh">install.sh</a> descarga y comprueba lo que necesita cada computadora. Cada archivo aparece en <code>SHA256SUMS</code> de su versión.</p>
 {body}
 </main></body></html>
 """

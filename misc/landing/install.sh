@@ -200,14 +200,23 @@ else
 fi
 
 # OpenCode plugin -------------------------------------------------------------
+# Checked against SHA256SUMS like the daemon: it runs inside OpenCode.
 if [ "$NO_PLUGIN" != 1 ]; then
   step "Instalando el plugin de OpenCode"
-  if fetch "$BASE_URL/guardian.ts" "$TMP/guardian.ts" 2>/dev/null; then
+  PLUGIN_SRC=""
+  # guardian.ts is the name in releases up to 0.1.1.
+  for name in hawk-opencode-plugin.ts guardian.ts; do
+    if fetch "$BASE_URL/$name" "$TMP/$name" 2>/dev/null; then PLUGIN_SRC="$name"; break; fi
+  done
+  if [ -n "$PLUGIN_SRC" ]; then
+    WANT="$(grep -E "[ *]$PLUGIN_SRC\$" "$TMP/SHA256SUMS" | cut -d' ' -f1 | head -n1)"
+    [ -n "$WANT" ] && [ "$WANT" = "$(sha "$TMP/$PLUGIN_SRC")" ] \
+      || fail "El plugin no coincide con SHA256SUMS. No lo instalo."
     run mkdir -p "$PLUGIN_DIR"
-    run cp "$TMP/guardian.ts" "$PLUGIN_FILE"
+    run cp "$TMP/$PLUGIN_SRC" "$PLUGIN_FILE"
     note "$PLUGIN_FILE"
   else
-    note "No encontré guardian.ts en $BASE_URL. Cópialo a mano desde agent-hook/ a $PLUGIN_DIR."
+    note "No encontré el plugin en $BASE_URL. Cópialo a mano desde agent-hook/guardian.ts a $PLUGIN_DIR."
   fi
 fi
 

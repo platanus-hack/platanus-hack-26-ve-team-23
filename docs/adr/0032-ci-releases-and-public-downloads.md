@@ -67,7 +67,8 @@ Option 2.
   - the owner app for the desktop: `.deb` and AppImage (Linux), NSIS
     installer (Windows), a universal `.dmg` (macOS), signed and notarized
     when the `APPLE_*` secrets exist and ad-hoc signed otherwise;
-  - the OpenCode plugin `guardian.ts`;
+  - the OpenCode plugin, published as `hawk-opencode-plugin.ts`
+    (`guardian.ts` up to 0.1.1);
   - an Android APK, built in debug mode and marked experimental until the
     release keystore exists (ADR-0017 follow-up). Its job may fail without
     blocking the release.
@@ -75,7 +76,8 @@ Option 2.
   `hawk-<v>-<x86_64|aarch64>-<linux|macos>.tar.gz` (folder
   `hawk-<v>-<arch>-<os>/host-daemon`), `hawk-<v>-x86_64-windows.zip`,
   `hawk-core-<v>-<arch>-linux.tar.gz`, `hawk-witness-<v>-...`,
-  `guardian.ts`, `SHA256SUMS`.
+  `hawk-opencode-plugin.ts`, `SHA256SUMS`. `install.sh` checks the plugin
+  against `SHA256SUMS` too, since it runs inside OpenCode.
 - **Checksums now, signature when the key exists.** `SHA256SUMS` covers
   every file. If the repository secret `MINISIGN_SECRET_KEY` exists, CI also
   publishes `SHA256SUMS.minisig`; `install.sh` verifies it when its embedded
@@ -172,3 +174,6 @@ Build tools only; nothing is linked into the product.
   `.dmg`, tests in CI), at the team's request.
 - v1.2 (2026-10-24): cargo-zigbuild unpinned (0.19 failed to link aarch64
   with current rustc); the Android job uses `cargo tauri` instead of npx.
+- v1.3 (2026-10-24): the plugin is published as `hawk-opencode-plugin.ts`,
+  checked against `SHA256SUMS` by the installer, and the downloads page
+  says what each file is.

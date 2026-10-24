@@ -22,6 +22,12 @@ Every entry is written when the change is merged, under `Unreleased`.
 
 ### Changed
 
+- The OpenCode plugin is published as `hawk-opencode-plugin.ts` (was
+  `guardian.ts`), and `install.sh` now checks it against `SHA256SUMS`
+  before installing it: it runs inside OpenCode, and before it was copied
+  unchecked. The downloads page groups the files (app, program for each
+  computer, Core, plugin, verification) and says what each one is.
+- The release collects the Android APK (the step failed under pipefail).
 - Landing: the hero spells out Hardware Autonomous Watcher & Keeper; the
   Core runs today on a dedicated device (a Raspberry Pi 4 or another 64-bit
   Linux machine) and the next step needs one able to run a Granite 4 class

@@ -267,7 +267,7 @@ jobs:
           merge-multiple: true
       - name: Plugin and checksums
         run: |
-          cp agent-hook/guardian.ts dist/guardian.ts
+          cp agent-hook/guardian.ts dist/hawk-opencode-plugin.ts
           cd dist
           sha256sum -- * > SHA256SUMS
           cat SHA256SUMS
