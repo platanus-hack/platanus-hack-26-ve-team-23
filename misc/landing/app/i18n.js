@@ -282,7 +282,7 @@
 
     "scope.title": "Qué hace HAWK y qué no",
     "scope.does": "Hace",
-    "scope.doesHook": "Revisa cada herramienta de OpenCode antes de que se ejecute.",
+    "scope.doesHook": "Revisa cada herramienta de OpenCode, Claude Code y Codex antes de que se ejecute.",
     "scope.doesRules": "Decide con un catálogo de reglas: borrar historial o registros, leer o enviar secretos, apagar el monitor, shells inversas, ofuscación, force push, borrados recursivos y escrituras fuera del proyecto.",
     "scope.doesContain": "Ante una acción crítica, aísla el equipo en tu router OpenWrt o MikroTik.",
     "scope.doesRecord": "Guarda cada decisión en un registro encadenado y firmado que solo esta app puede abrir.",
@@ -290,7 +290,7 @@
     "scope.doesNot": "No hace (todavía)",
     "scope.notUnknown": "No detiene lo que ninguna regla reconoce: lo permite y lo registra.",
     "scope.notModel": "No usa un modelo de IA para decidir. El clasificador está en desarrollo.",
-    "scope.notAgents": "No revisa otros agentes además de OpenCode.",
+    "scope.notAgents": "No bloquea agentes sin hooks: solo OpenCode, Claude Code y Codex pasan por HAWK.",
     "scope.notOutside": "No ve lo que ocurre fuera de las herramientas del agente, como programas que lances tú.",
 
     "cfg.name": "Nombre del Core",
@@ -657,7 +657,7 @@
 
     "scope.title": "What HAWK does and does not do",
     "scope.does": "Does",
-    "scope.doesHook": "Checks every OpenCode tool before it runs.",
+    "scope.doesHook": "Checks every OpenCode, Claude Code and Codex tool before it runs.",
     "scope.doesRules": "Decides with a catalogue of rules: deleting history or logs, reading or sending secrets, stopping the monitor, reverse shells, obfuscation, force pushes, recursive deletes and writes outside the project.",
     "scope.doesContain": "On a critical action, isolates the machine on your OpenWrt or MikroTik router.",
     "scope.doesRecord": "Keeps every decision in a chained, signed record that only this app can open.",
@@ -665,7 +665,7 @@
     "scope.doesNot": "Does not (yet)",
     "scope.notUnknown": "Stop what no rule recognises: it allows and records it.",
     "scope.notModel": "Use an AI model to decide. The classifier is in development.",
-    "scope.notAgents": "Check agents other than OpenCode.",
+    "scope.notAgents": "Block agents without hooks: only OpenCode, Claude Code and Codex go through HAWK.",
     "scope.notOutside": "See what happens outside the agent's tools, such as programs you start yourself.",
 
     "cfg.name": "Core name",

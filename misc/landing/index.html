@@ -605,9 +605,9 @@ footer { padding: var(--gap-section) 0 40px; }
           <p>Descarga el Core y arráncalo. Muestra su huella al arrancar, se anuncia en la red y niega todo hasta que lo actives. En un equipo x86_64, usa el archivo <code>x86_64-linux</code> de <a href="downloads/">Descargas</a>.</p>
           <div class="cmd">
             <pre><span class="q">$</span> curl -fsSLO \
-    https://hawkeeper.xyz/downloads/v0.1.3/hawk-core-0.1.3-aarch64-linux.tar.gz
-<span class="q">$</span> tar -xzf hawk-core-0.1.3-aarch64-linux.tar.gz
-<span class="q">$</span> ./hawk-core-0.1.3-aarch64-linux/guardian</pre>
+    https://hawkeeper.xyz/downloads/v0.1.4/hawk-core-0.1.4-aarch64-linux.tar.gz
+<span class="q">$</span> tar -xzf hawk-core-0.1.4-aarch64-linux.tar.gz
+<span class="q">$</span> ./hawk-core-0.1.4-aarch64-linux/guardian</pre>
             <button class="copy" type="button">Copiar</button>
           </div>
         </li>
@@ -655,7 +655,7 @@ footer { padding: var(--gap-section) 0 40px; }
       </div>
       <dl class="faq">
         <div data-r><dt>¿Qué pasa si HAWK se apaga o no responde?</dt><dd>La acción no se ejecuta. Ante un error, un tiempo agotado o un HAWK sin emparejar, la respuesta es negar.</dd></div>
-        <div data-r><dt>¿Qué agentes soporta?</dt><dd>Hoy, OpenCode, con un plugin pequeño que le pregunta a HAWK antes de cada herramienta.</dd></div>
+        <div data-r><dt>¿Qué agentes soporta?</dt><dd>OpenCode, con un plugin, y Claude Code y Codex, con un hook que el instalador registra solo. Los tres le preguntan a HAWK antes de cada herramienta. Un agente sin hooks no pasa por HAWK.</dd></div>
         <div data-r><dt>¿Qué detecta hoy?</dt><dd>Un catálogo de reglas: borrar historial o registros, leer o enviar secretos, apagar el monitor o su plugin, shells inversas, ofuscación y escrituras fuera del proyecto. Ante un force push o un borrado recursivo, te pregunta. Lo que ninguna regla reconoce se permite y queda registrado.</dd></div>
         <div data-r><dt>¿Puedo ajustar cuándo me pregunta?</dt><dd>Sí. En la app, en Ajustes, eliges desde qué severidad te pregunta y desde cuál niega. Una acción crítica siempre se niega y aísla la máquina; una alta, como mínimo, te pregunta. El cambio queda firmado y registrado.</dd></div>
         <div data-r><dt>¿Necesito una Raspberry Pi?</dt><dd>No. Hoy sirve cualquier equipo dedicado con Linux de 64 bits, ARM o x86_64, que no sea una de las máquinas vigiladas. Los próximos pasos suman un modelo local, y para eso hará falta un equipo capaz de ejecutar un modelo de la clase Granite 4, de unos 800 millones de parámetros.</dd></div>
