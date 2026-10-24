@@ -382,6 +382,7 @@ footer { padding: var(--gap-section) 0 40px; }
       <a href="#por-que">Qué hace</a>
       <a href="#telefono">La app</a>
       <a href="#conexion">Cómo se conecta</a>
+      <a href="#siguiente">Próximos pasos</a>
       <a href="#preguntas">Preguntas</a>
       <a class="act" href="#instalar">Instalar</a>
     </nav>
@@ -394,7 +395,7 @@ footer { padding: var(--gap-section) 0 40px; }
       <h1 class="d1">Tu agente ejecuta.<br>Tu HAWK revisa.</h1>
 
       <div class="hero-copy">
-        <p class="lede">HAWK revisa cada acción de tus agentes de IA desde un equipo separado, una Raspberry Pi o cualquier computadora con Linux, antes de que se ejecute. Ante una acción crítica, la niega y, con un router OpenWrt o MikroTik, aísla la máquina.</p>
+        <p class="lede"><strong>Hardware Autonomous Watcher &amp; Keeper.</strong> Un equipo dedicado, como una Raspberry Pi, revisa cada acción de tus agentes de IA antes de que se ejecute. Ante una acción crítica, la niega y, con un router OpenWrt o MikroTik, aísla la máquina.</p>
         <div class="actions">
           <a class="btn primary" href="#instalar">Cómo instalarlo</a>
           <a class="btn plain" href="downloads/">Descargas</a>
@@ -484,7 +485,7 @@ footer { padding: var(--gap-section) 0 40px; }
     <div class="frame">
       <div class="grid section-head">
         <h2 class="d2" data-r>Cabe en una mano.</h2>
-        <p class="lede" data-r>La forma más pequeña de correr HAWK es una Raspberry Pi 4 conectada a tu red. También corre en cualquier computadora con Linux de 64 bits, siempre que no sea una de las que vigila.</p>
+        <p class="lede" data-r>Hoy HAWK corre en una Raspberry Pi 4 conectada a tu red, o en otro equipo dedicado con Linux de 64 bits, nunca en una de las máquinas que vigila. Lo que viene pide un equipo capaz de ejecutar un modelo pequeño: ver <a href="#siguiente">próximos pasos</a>.</p>
       </div>
       <div class="explorer" id="explorer" data-r>
         <div class="stage">
@@ -568,6 +569,21 @@ footer { padding: var(--gap-section) 0 40px; }
     </div>
   </section>
 
+  <section class="section" id="archivo" data-group data-pi-pose="ports" data-pi-side="right" data-pi-o=".18">
+    <div class="frame">
+      <div class="grid section-head">
+        <h2 class="d2" data-r>Una copia fuera de la placa.</h2>
+        <p class="lede" data-r>Opcional. HAWK puede copiar su registro a cualquier almacenamiento compatible con S3 que tenga Object Lock: AWS S3, RustFS u otro.</p>
+      </div>
+      <ul class="claims">
+        <li class="grid" data-r><h3 class="s3">Cifrado antes de salir.</h3><p>Cada lote viaja con el contenido de sus eventos sellado con la llave de tu teléfono. El almacenamiento guarda datos que no puede leer.</p></li>
+        <li class="grid" data-r><h3 class="s3">Nadie lo puede borrar.</h3><p>Object Lock en modo compliance: durante la retención, nadie borra ni sobrescribe un lote, ni siquiera la cuenta dueña del almacenamiento.</p></li>
+        <li class="grid" data-r><h3 class="s3">Comprobable contra la firma.</h3><p>Cada cabecera firmada lleva la raíz Merkle de su lote, así que un lote archivado se puede comprobar contra lo que HAWK firmó.</p></li>
+        <li class="grid" data-r><h3 class="s3">Sin depender de la nube.</h3><p>Si el almacenamiento no responde, HAWK sigue decidiendo y guardando en el equipo. La copia se retoma después.</p></li>
+      </ul>
+    </div>
+  </section>
+
   <section class="install night" id="instalar" data-group data-pi-pose="top" data-pi-o="0">
     <div class="frame">
       <div class="grid section-head">
@@ -577,7 +593,7 @@ footer { padding: var(--gap-section) 0 40px; }
       <div class="need" data-r>
         <strong>Necesitas</strong>
         <ul>
-          <li>Una Raspberry Pi 4 de 2 GB o más con Raspberry Pi OS de 64 bits, o cualquier computadora con Linux de 64 bits que no sea una de las vigiladas, conectada por cable a tu router.</li>
+          <li>Un equipo dedicado con Linux de 64 bits, conectado por cable a tu router: una Raspberry Pi 4 de 2 GB o más con Raspberry Pi OS de 64 bits, u otro equipo que no sea una de las máquinas vigiladas.</li>
           <li>Tu teléfono Android, o la app de escritorio para Windows, macOS o Linux.</li>
           <li>Las computadoras donde trabajan tus agentes (Linux, macOS o Windows), en la misma red.</li>
           <li>Opcional: un router OpenWrt o MikroTik, para aislar máquinas.</li>
@@ -586,7 +602,7 @@ footer { padding: var(--gap-section) 0 40px; }
       <ol class="guide">
         <li data-r>
           <h3>Instala HAWK en la Raspberry Pi o en el equipo que elijas</h3>
-          <p>Descarga el Core y arráncalo. Muestra su huella al arrancar, se anuncia en la red y niega todo hasta que lo actives. En una computadora x86_64, usa el archivo <code>x86_64-linux</code> de <a href="downloads/">Descargas</a>.</p>
+          <p>Descarga el Core y arráncalo. Muestra su huella al arrancar, se anuncia en la red y niega todo hasta que lo actives. En un equipo x86_64, usa el archivo <code>x86_64-linux</code> de <a href="downloads/">Descargas</a>.</p>
           <div class="cmd">
             <pre><span class="q">$</span> curl -fsSLO \
     https://hawkeeper.xyz/downloads/v0.1.1/hawk-core-0.1.1-aarch64-linux.tar.gz
@@ -617,6 +633,20 @@ footer { padding: var(--gap-section) 0 40px; }
     </div>
   </section>
 
+  <section class="section" id="siguiente" data-group data-pi-pose="soc" data-pi-side="right" data-pi-o=".19">
+    <div class="frame">
+      <div class="grid section-head">
+        <h2 class="d2" data-r>Próximos pasos.</h2>
+        <p class="lede" data-r>Más espacio de arquitectura en el mismo equipo. Lo que sigue no está construido todavía.</p>
+      </div>
+      <ul class="claims">
+        <li class="grid" data-r><h3 class="s3">Un modelo local para lo ambiguo.</h3><p>Las reglas deciden lo claro. Un modelo pequeño de la clase Granite 4, de unos 800 millones de parámetros, corriendo en el propio equipo HAWK, ayudará a clasificar lo que las reglas no resuelven. El equipo recomendado será el que pueda ejecutarlo.</p></li>
+        <li class="grid" data-r><h3 class="s3">La identidad de cada computadora, en su TPM.</h3><p>La llave del programa de cada computadora sellada en su chip de seguridad, para que una máquina clonada no pueda hacerse pasar por otra.</p></li>
+        <li class="grid" data-r><h3 class="s3">Configuración para equipos.</h3><p>Una configuración firmada que publica tu pipeline y HAWK aplica sola, siempre como el siguiente eslabón de su cadena, sin vuelta atrás.</p></li>
+      </ul>
+    </div>
+  </section>
+
   <section class="section" id="preguntas" data-group data-pi-pose="front" data-pi-side="left" data-pi-o=".2">
     <div class="frame">
       <div class="grid section-head">
@@ -626,8 +656,9 @@ footer { padding: var(--gap-section) 0 40px; }
       <dl class="faq">
         <div data-r><dt>¿Qué pasa si HAWK se apaga o no responde?</dt><dd>La acción no se ejecuta. Ante un error, un tiempo agotado o un HAWK sin emparejar, la respuesta es negar.</dd></div>
         <div data-r><dt>¿Qué agentes soporta?</dt><dd>Hoy, OpenCode, con un plugin pequeño que le pregunta a HAWK antes de cada herramienta.</dd></div>
-        <div data-r><dt>¿Qué detecta hoy?</dt><dd>Un catálogo de reglas: borrar historial o registros, leer o enviar secretos, apagar el monitor o su plugin, shells inversas, ofuscación y escrituras fuera del proyecto. Lo que ninguna regla reconoce se permite y queda registrado. Un clasificador para los casos ambiguos está en desarrollo.</dd></div>
-        <div data-r><dt>¿Necesito una Raspberry Pi?</dt><dd>No. Es la opción pequeña y barata. HAWK corre en cualquier computadora con Linux de 64 bits, ARM o x86_64, siempre que no sea una de las que vigila.</dd></div>
+        <div data-r><dt>¿Qué detecta hoy?</dt><dd>Un catálogo de reglas: borrar historial o registros, leer o enviar secretos, apagar el monitor o su plugin, shells inversas, ofuscación y escrituras fuera del proyecto. Ante un force push o un borrado recursivo, te pregunta. Lo que ninguna regla reconoce se permite y queda registrado.</dd></div>
+        <div data-r><dt>¿Puedo ajustar cuándo me pregunta?</dt><dd>Sí. En la app, en Ajustes, eliges desde qué severidad te pregunta y desde cuál niega. Una acción crítica siempre se niega y aísla la máquina; una alta, como mínimo, te pregunta. El cambio queda firmado y registrado.</dd></div>
+        <div data-r><dt>¿Necesito una Raspberry Pi?</dt><dd>No. Hoy sirve cualquier equipo dedicado con Linux de 64 bits, ARM o x86_64, que no sea una de las máquinas vigiladas. Los próximos pasos suman un modelo local, y para eso hará falta un equipo capaz de ejecutar un modelo de la clase Granite 4, de unos 800 millones de parámetros.</dd></div>
         <div data-r><dt>¿Qué router necesito?</dt><dd>OpenWrt o MikroTik para aislar máquinas. Sin router compatible, HAWK sigue revisando y registrando, y el aislamiento corre en modo de prueba.</dd></div>
         <div data-r><dt>¿Puede el agente borrar el registro?</dt><dd>No. El registro vive en la placa, encadenado y firmado. Si alguien cambia una sola decisión, tu teléfono lo detecta al verificar las firmas.</dd></div>
         <div data-r><dt>¿HAWK puede leer mi código?</dt><dd>HAWK ve las llamadas a herramientas que tiene que decidir. Lo que guarda en el registro queda sellado con una llave que solo tiene tu teléfono: la placa lo escribe, pero no lo puede leer.</dd></div>

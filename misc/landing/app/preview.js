@@ -184,11 +184,13 @@
   let paired = !scenario.startsWith("wizard");
   let coreName = "Lab Core";
   let firewall = "dry-run";
+  // The defaults of ADR-0033, as the Core reports them in Status.
+  let thresholds = { ask_from: "medium", deny_from: "high" };
   let calls = 0;
 
   function statusObj() {
     const last = heads.length ? heads[heads.length - 1].seq : null;
-    return { paired: scenario !== "dormant", events: seq, head: heads.length ? heads[heads.length - 1].head : hex(64), last_signed_seq: last, firewall, name: coreName };
+    return { paired: scenario !== "dormant", events: seq, head: heads.length ? heads[heads.length - 1].head : hex(64), last_signed_seq: last, firewall, name: coreName, thresholds: { ...thresholds } };
   }
 
   function dashboard() {
@@ -238,7 +240,7 @@
         switch (cmd) {
           case "app_info":
             return {
-              version: "0.1.0",
+              version: "0.1.1",
               device_fingerprint: "9e4d-22b1-c8f0-5a17",
               core: paired ? { id: CORE_ID, fingerprint: fpOf(CORE_ID), name: coreName } : null,
             };
@@ -263,6 +265,12 @@
             coreName = name;
             const fw = args.firewall && args.firewall.kind;
             firewall = fw === "dry_run" ? "dry-run" : fw;
+            const rank = { low: 0, medium: 1, high: 2, critical: 3 };
+            const th = args.thresholds;
+            if (th) {
+              if (!(th.ask_from in rank) || !(th.deny_from in rank) || rank[th.ask_from] > rank.high || rank[th.ask_from] > rank[th.deny_from]) return fail("a high finding must at least ask, and asking cannot start above denying");
+              thresholds = { ask_from: th.ask_from, deny_from: th.deny_from };
+            }
             return name;
           }
           case "identify_host":

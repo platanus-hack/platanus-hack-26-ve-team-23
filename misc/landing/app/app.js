@@ -782,6 +782,7 @@
     $("set-core-name").textContent = st.name || (S.info && S.info.core && S.info.core.name) || t("core.default");
     $("set-core-fp").textContent = S.info && S.info.core ? S.info.core.fingerprint : t("common.none");
     $("set-firewall").textContent = st.firewall || t("settings.fwNone");
+    $("set-thresholds").textContent = thresholdsText(st.thresholds);
     $("set-events").textContent = st.events !== undefined ? number(st.events) : t("common.none");
     $("device-fp").textContent = S.info ? S.info.device_fingerprint : t("common.none");
     $("version").textContent = S.info ? `v${S.info.version}` : "";
@@ -802,9 +803,29 @@
     document.documentElement.dataset.theme = effective;
   }
 
+  // Attention thresholds (ADR-0033): from which severity HAWK asks, and from which it denies.
+  // Critical always denies and isolates; a high finding at least asks.
+
+  const DEFAULT_THRESHOLDS = { ask_from: "medium", deny_from: "high" };
+  const SEV_RANK = { low: 0, medium: 1, high: 2, critical: 3 };
+
+  function activeThresholds() {
+    const st = (S.data && S.data.status) || (S.lastGood && S.lastGood.status) || {};
+    return st.thresholds || DEFAULT_THRESHOLDS;
+  }
+
+  function sevLabel(sev) {
+    return sev === "critical" ? t("cfg.denyCriticalOnly") : t(`sev.${sev in SEV_RANK ? sev : "high"}`);
+  }
+
+  function thresholdsText(th) {
+    const v = th || DEFAULT_THRESHOLDS;
+    return t("settings.thresholdsValue", { ask: sevLabel(v.ask_from), deny: sevLabel(v.deny_from) });
+  }
+
   // The config form, shared by the wizard and Ajustes ----------------------------------------
 
-  function configForm({ name, submitLabel, skipLabel, onSaved, onSkip }) {
+  function configForm({ name, thresholds, submitLabel, skipLabel, onSaved, onSkip }) {
     const node = document.getElementById("tpl-config").content.firstElementChild.cloneNode(true);
     apply(node);
     const f = node.elements;
@@ -812,6 +833,9 @@
     const fwNote = node.querySelector("[data-fw-note]");
     const router = node.querySelector(".router");
     f.name.value = name || "";
+    const th = thresholds || DEFAULT_THRESHOLDS;
+    f.ask.value = th.ask_from in SEV_RANK && th.ask_from !== "critical" ? th.ask_from : DEFAULT_THRESHOLDS.ask_from;
+    f.deny.value = th.deny_from in SEV_RANK ? th.deny_from : DEFAULT_THRESHOLDS.deny_from;
     const sync = () => {
       const kind = f.fw.value;
       router.hidden = kind === "dry_run";
@@ -838,11 +862,14 @@
         firewall = { kind: f.fw.value, url: f.url.value.trim(), user: f.user.value.trim(), password: f.password.value, cert_sha256: f.cert.value.trim() || null };
         if (f.fw.value === "mikrotik") firewall.list = f.list.value.trim() || null;
       }
+      const chosen = { ask_from: f.ask.value, deny_from: f.deny.value };
+      if (SEV_RANK[chosen.ask_from] > SEV_RANK[chosen.deny_from]) { show(t("cfg.badThresholds")); f.ask.focus(); return; }
       submit.disabled = true;
       const label = submit.textContent;
       submit.textContent = t("cfg.saving");
       try {
-        const saved = await S.invoke("configure_core", { name: nameValue, firewall });
+        // Exactly the shape of `Thresholds` in guardian-core; the Rust command signs it.
+        const saved = await S.invoke("configure_core", { name: nameValue, firewall, thresholds: chosen });
         f.password.value = "";
         await onSaved(saved);
       } catch (e) {
@@ -859,6 +886,7 @@
     const name = (S.info && S.info.core && S.info.core.name) || "";
     const form = configForm({
       name,
+      thresholds: activeThresholds(),
       submitLabel: t("cfg.saveSettings"),
       onSaved: async (saved) => {
         closeSheet(true);

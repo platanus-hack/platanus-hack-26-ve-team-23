@@ -83,6 +83,11 @@ Models of 1.5B and above are out of the demo device.
 
 ## History
 
+- v1.2 (2026-10-24): the model stage is the next step and targets the
+  Granite 4 class, around 800M parameters, still below the 1.5B cap. The
+  device recommended for the Core will be the one able to run it
+  (measurement pending); until then a Raspberry Pi 4 or another dedicated
+  64-bit Linux machine runs the rules.
 - v1.1 (2026-10-24): the first rule set is implemented as data: a JSON
   catalogue (`detect/rules/default.json`, 10 rules with fire/deny examples)
   loaded by `detect::catalogue`, plus a code rule for writes outside the

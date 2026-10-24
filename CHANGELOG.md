@@ -22,6 +22,12 @@ Every entry is written when the change is merged, under `Unreleased`.
 
 ### Changed
 
+- Landing: the hero spells out Hardware Autonomous Watcher & Keeper; the
+  Core runs today on a dedicated device (a Raspberry Pi 4 or another 64-bit
+  Linux machine) and the next step needs one able to run a Granite 4 class
+  model (~800M, ADR-0005 v1.2); new sections for the optional off-site
+  archive in S3-compatible storage with Object Lock and for the next steps;
+  an answer on the thresholds. The phone frame shows the current app.
 - Version 0.1.1: the first release built by `release.yml`. The v0.1.0
   release, built by hand from `887ae46`, stays as published.
 - The landing, the installer and the release notes use
