@@ -16,6 +16,14 @@ Every entry is written when the change is merged, under `Unreleased`.
   redesign, designs ready) and the critical path for the demo;
   `PENDIENTES.md` lists that path and the redesign after the clean-up.
 - ADR-0011 v1.2: OFL-1.1 allowed for font files only, as the team decided.
+- `webpki-roots` 1.0.11 (RUSTSEC-2026-0381, distrusted emSign roots).
+  `deny.toml` records two exceptions with their reason and review:
+  RUSTSEC-2026-0387 (crypto-bigint 0.5 via p256 0.13, until the p256 0.14
+  migration) and RUSTSEC-2024-0370 (proc-macro-error via Tauri's GTK).
+- Landing: simpler and more sober content; the interactive demo, the
+  decision ticker and "Lo que no es" are gone; "Instalación" is a step by
+  step guide (requirements, the Core on the Pi, activation, the daemon,
+  approval); Javier Hernández added to the team.
 - `witness/icons`: the HAWK mark replaces the icons copied from Nepheral.
 
 ### Added
