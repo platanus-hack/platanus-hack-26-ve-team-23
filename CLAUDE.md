@@ -121,7 +121,9 @@ Keystore). Crates depend only downwards; `guardian-core` does no I/O.
 
 ## What is not built and why
 
-`PENDIENTES.md` lists every open item, who should do it, and why. Some
+`PENDIENTES.md` lists every open item, who should do it, and why;
+`docs/EJECUCION-PENDIENTES.md` says how to execute each one, with acceptance
+criteria and ready-to-use prompts. Some
 items (the detection rule catalogue, the evaluation attacks, host heartbeats
 and attestation) were stopped by the model's safety filter while being
 written, so they are for the team to write by hand. Do not retry them in a
