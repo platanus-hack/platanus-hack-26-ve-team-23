@@ -6,10 +6,13 @@ Raspberry Pi (2 GB, Linux, arm64); in Docker it is limited to 2 GB to match.
 - **Status:** QUIC with mutual TLS on `GUARDIAN_ADDR` (UDP, default
   `0.0.0.0:7443`), mDNS announcement, pairing bound to the app identity,
   owner-signed configuration, sealed and chained record with hybrid signed
-  heads, containment on the firewall, sinks, host registry and identify.
-  Pending: rule catalogue (team), host heartbeats and enrolment (team), LLM
-  proxy cross-check, opening the record, releasing a quarantine. See
-  `PENDIENTES.md`.
+  heads, containment on the firewall, sinks, host registry and identify, the
+  hook-proxy cross-check (ADR-0004), releasing a quarantine with the owner's
+  signature (ADR-0018), opening the sealed record (ADR-0007), holding and
+  answering `ask` decisions (ADR-0022), the data-driven rule catalogue
+  (ADR-0005), host enrolment (ADR-0021) and the heartbeat with the dead man's
+  switch (ADR-0021). Pending: TPM-sealed daemon key and measured boot
+  (hardware). See `PENDIENTES.md`.
 
 ## Messages (`guardian_core::wire`)
 
@@ -18,9 +21,17 @@ Raspberry Pi (2 GB, Linux, arm64); in Docker it is limited to 2 GB to match.
 | `hello` | anyone | identity, paired, configuration summary |
 | `pair_offer`, `pair` | anyone, while unpaired | offer; then the confirmation code |
 | `configure` | the paired app, with the owner's signature | configuration summary |
+| `release` | the paired app, with the owner's signature | ack (calls `Firewall::release`, recorded) |
+| `open_record` | the paired app, with the owner's signature | the sealed events of the range (recorded) |
+| `pending_asks`, `answer` | the paired app; `answer` with the owner's signature | the waiting asks; ack |
+| `approve_host` | the paired app, with the owner's signature | ack (enrols a host) |
 | `status`, `events`, `heads`, `hosts`, `identify` | the paired app only | state, event metadata, signed heads, hosts, ack |
-| `decide` | host daemons | decision |
+| `decide` | enrolled host daemons | decision |
+| `proxy_record` | enrolled host daemons | ack (recorded sealed; tool calls cross-checked) |
 | `host_hello` | host daemons | ack |
+
+The Core sends `heartbeat_challenge` to each enrolled host over its own
+connection and verifies the signed `heartbeat` answer (ADR-0021).
 
 The Core has no HTTP endpoint (ADR-0023). `guardian probe ADDR` sends a QUIC
 hello from a throwaway identity and prints the answer.

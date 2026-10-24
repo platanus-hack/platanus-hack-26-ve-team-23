@@ -198,6 +198,7 @@ async fn hello(
         os: "stress".into(),
         hwid: hwid.into(),
         nics,
+        boot_digest: None,
     };
     match call(conn, &req).await? {
         Response::Ack => Ok(()),

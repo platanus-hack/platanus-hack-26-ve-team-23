@@ -21,8 +21,11 @@ use guardian_core::wire::{Request, Response};
 use tracing_subscriber::EnvFilter;
 
 mod api;
+mod asks;
 mod core;
+mod crosscheck;
 mod enrolment;
+mod heartbeat;
 mod hosts;
 mod neighbors;
 
@@ -176,11 +179,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let state = api::AppState::new(
         core,
-        detect::Detector::new(),
+        detect::Detector::with_rules(detect::catalogue::builtin()),
         firewall,
         publisher,
         announcer,
     );
+    // Evict proposals that were never matched by a hook decide (ADR-0004).
+    let sweeper = state.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            sweeper.sweep_expired().await;
+        }
+    });
+    // Challenge hosts and quarantine the silent ones (ADR-0021).
+    let beater = state.clone();
+    tokio::spawn(async move {
+        loop {
+            beater.heartbeat_round().await;
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+    });
     tracing::info!(%addr, "core listening (QUIC)");
     // Enterprise edition (ADR-0027): configuration published remotely and
     // signed by the enterprise signer the owner authorised. Off by default:

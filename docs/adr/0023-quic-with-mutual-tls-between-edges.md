@@ -59,8 +59,8 @@ reading. Requests and responses are the `Request` and `Response` enums in
   never from the message) to the owner key.
 - After pairing, status, events, heads and configuration are served only to
   that witness identity. Configuration also needs the owner's signature.
-- Decisions are accepted from any authenticated peer until host enrolment
-  exists (ADR-0021; see `PENDIENTES.md`).
+- Decisions are accepted only from hosts the owner has enrolled
+  (`Request::ApproveHost`, ADR-0021); an unenrolled host is denied.
 
 ## Dependencies and licences
 
@@ -102,4 +102,6 @@ reading. Requests and responses are the `Request` and `Response` enums in
 
 ## History
 
+- v1.1 (2026-10-24): decisions are accepted only from hosts the owner has
+  enrolled (ADR-0021), no longer from any authenticated peer.
 - v1.0 (2026-10-24): Initial decision.

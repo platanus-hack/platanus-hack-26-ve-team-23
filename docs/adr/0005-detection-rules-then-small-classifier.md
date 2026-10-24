@@ -83,4 +83,8 @@ Models of 1.5B and above are out of the demo device.
 
 ## History
 
+- v1.1 (2026-10-24): the first rule set is implemented as data: a JSON
+  catalogue (`detect/rules/default.json`, 10 rules with fire/deny examples)
+  loaded by `detect::catalogue`, plus a code rule for writes outside the
+  workspace, run by the Core.
 - v1.0 (2026-10-24): Initial decision.

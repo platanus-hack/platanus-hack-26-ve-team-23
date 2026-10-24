@@ -123,6 +123,84 @@ pub fn configure_message(config: &CoreConfig) -> Vec<u8> {
     message
 }
 
+pub const RELEASE_DOMAIN: &[u8] = b"guardian.release.v1";
+
+/// Bytes the owner signs to release a host from quarantine: the host address
+/// and a timestamp, so a release cannot be replayed or aimed at another host.
+pub fn release_message(host: &str, timestamp_ms: u64) -> Vec<u8> {
+    let mut message = RELEASE_DOMAIN.to_vec();
+    message.extend_from_slice(host.as_bytes());
+    message.extend_from_slice(&timestamp_ms.to_be_bytes());
+    message
+}
+
+pub const OPEN_RECORD_DOMAIN: &[u8] = b"guardian.open-record.v1";
+
+/// Bytes the owner signs to open a range of the sealed record (ADR-0007):
+/// the range and a timestamp, so an opening cannot be replayed or widened.
+pub fn open_record_message(from_seq: u64, to_seq: u64, timestamp_ms: u64) -> Vec<u8> {
+    let mut message = OPEN_RECORD_DOMAIN.to_vec();
+    message.extend_from_slice(&from_seq.to_be_bytes());
+    message.extend_from_slice(&to_seq.to_be_bytes());
+    message.extend_from_slice(&timestamp_ms.to_be_bytes());
+    message
+}
+
+pub const ANSWER_DOMAIN: &[u8] = b"guardian.answer.v1";
+
+/// Bytes the owner signs to answer an `ask`: the ask id and the decision.
+/// The id is one-time and unpredictable, so a timestamp is unnecessary.
+pub fn answer_message(id: &str, allow: bool) -> Vec<u8> {
+    let mut message = ANSWER_DOMAIN.to_vec();
+    message.extend_from_slice(id.as_bytes());
+    message.push(u8::from(allow));
+    message
+}
+
+pub const HEARTBEAT_DOMAIN: &[u8] = b"guardian.heartbeat.v1";
+
+/// Bytes the daemon signs in a heartbeat (ADR-0021): the Core's nonce, a
+/// monotonic counter, the digest of the calls the daemon observed since the
+/// previous heartbeat, and its boot measurement (zeroes when there is no
+/// TPM).
+pub fn heartbeat_message(
+    nonce: &[u8],
+    counter: u64,
+    digest: &[u8; 32],
+    boot: &[u8; 32],
+) -> Vec<u8> {
+    let mut message = HEARTBEAT_DOMAIN.to_vec();
+    message.extend_from_slice(nonce);
+    message.extend_from_slice(&counter.to_be_bytes());
+    message.extend_from_slice(digest);
+    message.extend_from_slice(boot);
+    message
+}
+
+/// An `ask` waiting for the owner (ADR-0022), as the Core lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PendingAsk {
+    pub id: String,
+    pub session: String,
+    pub tool: String,
+    pub reason: String,
+    pub host: String,
+    pub created_at_ms: u64,
+}
+
+/// One event of the record as delivered to the witness: the chain metadata
+/// and the sealed payload, still encrypted (ADR-0006). The witness decrypts
+/// with its epoch key, never the Core.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecordEvent {
+    pub seq: u64,
+    pub timestamp_ms: u64,
+    /// The `EventKind` discriminant (see `guardian_core::event::EventKind`).
+    pub kind: u8,
+    /// Hex of the sealed payload.
+    pub payload: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
@@ -141,6 +219,31 @@ pub enum Request {
         config: CoreConfig,
         signature: String,
     },
+    /// Paired witness only, with the owner's signature over
+    /// `release_message(host, timestamp_ms)`, no more than 60 s old
+    /// (ADR-0018). `host` is the address that was quarantined.
+    Release {
+        host: String,
+        timestamp_ms: u64,
+        signature: String,
+    },
+    /// Paired witness only, with the owner's signature over
+    /// `open_record_message(from_seq, to_seq, timestamp_ms)` (ADR-0007).
+    OpenRecord {
+        from_seq: u64,
+        to_seq: u64,
+        timestamp_ms: u64,
+        signature: String,
+    },
+    /// Paired witness only: the `ask`s waiting for the owner (ADR-0022).
+    PendingAsks,
+    /// Paired witness only, with the owner's signature over
+    /// `answer_message(id, allow)` (ADR-0022).
+    Answer {
+        id: String,
+        allow: bool,
+        signature: String,
+    },
     /// Paired witness only.
     Status,
     Heads {
@@ -153,6 +256,11 @@ pub enum Request {
     Decide {
         call: ToolCall,
     },
+    /// From a host daemon: a copy of one proxy request/response, recorded and
+    /// cross-checked against the hook's decisions (ADR-0004).
+    ProxyRecord {
+        record: ProxyRecord,
+    },
     /// From a host daemon right after it connects: how to show it in the
     /// app, and the identifiers that link it over time (ADR-0028). All of it
     /// is declared, so labels and links only.
@@ -164,6 +272,10 @@ pub enum Request {
         hwid: String,
         #[serde(default)]
         nics: Vec<Nic>,
+        /// The boot measurement (PCR digest), hex, or none without a TPM
+        /// (ADR-0021).
+        #[serde(default)]
+        boot_digest: Option<String>,
     },
     /// Paired witness only: the hosts the Core knows.
     Hosts,
@@ -177,8 +289,13 @@ pub enum Request {
         core_name: String,
         fingerprint: String,
     },
+    /// From the Core to a host daemon: answer this challenge with a signed
+    /// heartbeat (ADR-0021).
+    HeartbeatChallenge {
+        nonce: String,
+    },
     /// Paired witness only: the owner approves a host, bound to its daemon
-    /// identity and HWID (ADR-0029).
+    /// identity and HWID (ADR-0021, ADR-0029).
     ApproveHost {
         approval: HostApproval,
     },
@@ -198,7 +315,7 @@ pub const APPROVE_DOMAIN: &[u8] = b"guardian.approve-host.v1";
 /// another machine.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HostApproval {
-    /// Ed25519 identity of the Core, hex.
+    /// Ed25519 transport identity of the Core, hex.
     pub core: String,
     /// Ed25519 identity of the host daemon, hex.
     pub host: String,
@@ -244,8 +361,8 @@ pub struct HostInfo {
     /// Contained at the firewall, by identity, HWID or MAC.
     #[serde(default)]
     pub contained: bool,
-    /// Approved by the owner (ADR-0029); the Core denies every call of a
-    /// host that is not.
+    /// Approved by the owner with the HWID it reports (ADR-0021, ADR-0029).
+    /// Unapproved hosts are shown as pending and their calls are denied.
     #[serde(default)]
     pub approved: bool,
     /// Why the Core does not trust this host's identifiers, if it does not:
@@ -253,6 +370,33 @@ pub struct HostInfo {
     /// different one than it was approved with.
     #[serde(default)]
     pub conflict: Option<String>,
+}
+
+/// A tool call the model proposed, extracted by the proxy from a chat
+/// response (ADR-0004). The `id` is the model's tool-call id, the same value
+/// the agent hook sends as `ToolCall.call_id`, so the Core can match the two.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProposedToolCall {
+    pub id: String,
+    pub name: String,
+    pub arguments: serde_json::Value,
+}
+
+/// One proxy exchange the host daemon relays to the Core for the sealed
+/// record and the hook-proxy cross-check (ADR-0004). The request and response
+/// are recorded as-is; `tool_calls` drive the cross-check.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProxyRecord {
+    pub timestamp_ms: u64,
+    /// The upstream path, for example `/v1/chat/completions`.
+    pub path: String,
+    /// The request body sent upstream (the prompt and tool definitions).
+    pub request: serde_json::Value,
+    /// The response body, if one arrived: the parsed JSON for non-streaming,
+    /// or the raw server-sent-events text for a streaming answer.
+    pub response: Option<serde_json::Value>,
+    /// The tool calls the model proposed in the response, with their ids.
+    pub tool_calls: Vec<ProposedToolCall>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -284,8 +428,25 @@ pub enum Response {
     Events {
         events: Vec<serde_json::Value>,
     },
+    /// The sealed events of the requested range (ADR-0007).
+    Record {
+        events: Vec<RecordEvent>,
+    },
+    /// The `ask`s waiting for the owner (ADR-0022).
+    Asks {
+        asks: Vec<PendingAsk>,
+    },
     Decision {
         decision: Decision,
+    },
+    /// A host daemon's answer to a heartbeat challenge (ADR-0021).
+    Heartbeat {
+        nonce: String,
+        counter: u64,
+        digest: String,
+        signature: String,
+        /// The boot measurement (PCR digest), hex, or none without a TPM.
+        boot: Option<String>,
     },
     Hosts {
         hosts: Vec<HostInfo>,
@@ -330,6 +491,19 @@ mod tests {
     }
 
     #[test]
+    fn release_and_open_messages_bind_their_fields() {
+        let base = release_message("10.0.0.7", 5);
+        assert_eq!(base, release_message("10.0.0.7", 5));
+        assert_ne!(base, release_message("10.0.0.8", 5));
+        assert_ne!(base, release_message("10.0.0.7", 6));
+
+        let open = open_record_message(1, 5, 100);
+        assert_eq!(open, open_record_message(1, 5, 100));
+        assert_ne!(open, open_record_message(1, 6, 100));
+        assert_ne!(open, open_record_message(1, 5, 101));
+    }
+
+    #[test]
     fn the_hash_binds_version_and_previous_link() {
         let first = CoreConfig {
             name: "lab".into(),
@@ -364,9 +538,15 @@ mod tests {
         let old: Request =
             serde_json::from_str(r#"{"op":"host_hello","hostname":"rig","os":"linux"}"#).unwrap();
         match old {
-            Request::HostHello { hwid, nics, .. } => {
+            Request::HostHello {
+                hwid,
+                nics,
+                boot_digest,
+                ..
+            } => {
                 assert!(hwid.is_empty());
                 assert!(nics.is_empty());
+                assert!(boot_digest.is_none());
             }
             other => panic!("unexpected {other:?}"),
         }

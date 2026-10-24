@@ -64,6 +64,24 @@ impl Enrolment {
             .unwrap_or_default()
     }
 
+    /// Approves `host` with `hwid` without a signature, for tests that
+    /// exercise the detector rather than the enrolment gate.
+    #[cfg(test)]
+    pub fn approve_for_test(&self, host: PeerId, hwid: &str) {
+        if let Ok(mut approved) = self.approved.lock() {
+            approved.insert(
+                host,
+                HostApproval {
+                    core: String::new(),
+                    host: hex::encode(host),
+                    hwid: hwid.into(),
+                    timestamp_ms: 0,
+                    signature: String::new(),
+                },
+            );
+        }
+    }
+
     pub fn approval(&self, host: &PeerId) -> Option<HostApproval> {
         self.approved.lock().ok()?.get(host).cloned()
     }

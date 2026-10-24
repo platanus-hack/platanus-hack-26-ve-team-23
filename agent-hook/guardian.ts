@@ -43,6 +43,7 @@ export const GuardianPlugin = async ({ directory }: PluginContext) => ({
       tool: input.tool,
       args: output.args ?? {},
       cwd: directory,
+      call_id: input.callID,
     });
     if (answer.decision !== "allow") {
       const reason = "reason" in answer ? answer.reason : "denied";

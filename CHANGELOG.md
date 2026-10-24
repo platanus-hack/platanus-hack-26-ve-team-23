@@ -27,6 +27,59 @@ Every entry is written when the change is merged, under `Unreleased`.
 - `docs/ENTRENAMIENTO-GRANITE.md`: how to build or fine-tune the classifier,
   with the reading list.
 
+- ADR-0028: hosts are selected by more than their IP. The Core reads the
+  peer's MAC in its neighbour table and contains it next to the IP (OpenWrt
+  `ether_addr` set, MikroTik mangle to the address list); the daemon reports
+  a HWID (OS machine id hashed with the Core identity). Quarantine is sticky
+  by identity, MAC and HWID; conflicting identifiers raise alerts.
+- ADR-0029: the daemon obeys one Core (build-time pin, environment, or a
+  `core.pin` written when the owner approves it).
+- ADR-0030: the Core's transport identity is created at first boot, its
+  head keys (Ed25519 and ML-DSA-65) when the wizard activates it, covered by
+  the owner's pairing signature (`guardian.pair.v2`).
+- Witness: typed Core address when discovery cannot reach, host filter by
+  name/IP/MAC/HWID/fingerprint, Approve and Release, Android safe areas.
+- `eval` `stress` binary: load and abuse run against a live Core.
+- ADR-0005/0022 detection catalogue: rules as data (JSON: id, severity,
+  MITRE technique, tools, field, patterns, exceptions, fire/deny examples)
+  with a loader and an embedded 10-rule catalogue (`detect/rules/default.json`,
+  attributed to Falco in `detect/NOTICE`) plus a code rule for writes outside
+  the workspace; the Core now runs the catalogue. A test walks every example.
+- ADR-0021 enrolment, merged with ADR-0029: the owner approves each host
+  from the app with a signature over Core, daemon key, HWID and time
+  (`Request::ApproveHost { approval }`); the Core denies `decide` and proxy
+  records from hosts that are not approved with the HWID they report.
+- ADR-0021 heartbeat and dead man's switch: the Core challenges each enrolled
+  host (`HeartbeatChallenge`) and verifies the signed `Heartbeat` (nonce,
+  monotonic counter, digest of observed calls, boot measurement); a host
+  silent for 15 s, or whose boot measurement changed, is quarantined. The
+  daemon reads the PCRs on Linux (`host-daemon/src/tpm.rs`); sealing the key
+  in the TPM and a TPM-signed quote are the hardware follow-up.
+- ADR-0010 evaluation set: task format, validation, metrics (safety, false
+  positives, usefulness, evasion detection, latency) and a runner in `eval/`
+  with 15 legitimate and 15 harmful tasks (several by prompt injection).
+- ADR-0022 `ask`: when the policy returns `Ask`, the Core holds the decision
+  for up to 60 s; the app lists `PendingAsks` and answers with a signed
+  `Answer { id, allow, signature }` (allow/deny buttons). No answer denies,
+  and the answer is recorded. The dashboard shows pending asks and a notice
+  for new alerts.
+- ADR-0007 opening: the app opens the sealed record with a signed
+  `Request::OpenRecord { from_seq, to_seq, timestamp_ms, signature }` (60 s
+  max age, paired witness only); the Core records a sealed `LogOpened` and
+  returns the events still sealed. The app verifies the chain against the
+  last signed head and decrypts each payload with `epoch.key` in a "Record"
+  view.
+- ADR-0018 release: the owner lifts a quarantine from the app with a P-256
+  signature over the host address and a timestamp (rejected after 60 s);
+  the Core calls `Firewall::release`, records a sealed `Released` event and
+  publishes it. Only the paired witness may send it.
+- ADR-0004 implemented: the OpenAI-compatible LLM proxy runs in the host
+  daemon on loopback, forwards to Ollama with SSE streaming, extracts the
+  model's tool calls (with ids) from streaming and non-streaming responses,
+  and relays a `ProxyRecord` to the Core. The Core records it sealed and
+  cross-checks the tool calls against the hook's `decide` (`call_id`) in a
+  5 s window: a proposal without a `decide` is a critical evasion alert that
+  quarantines the host; a `decide` without a proposal is a high alert.
 - ADR-0023 and ADR-0024: QUIC with mutual TLS between all our edges (the
   Core has no HTTP endpoint) and discovery with an activation wizard.
 - Pairing binds the app's device identity; the Core serves its record and

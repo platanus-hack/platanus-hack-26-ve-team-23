@@ -16,7 +16,9 @@ Copy `guardian.ts` to `.opencode/plugin/` in the project (or to
 ## What it does
 
 - In `tool.execute.before`, sends the tool name, arguments, working
-  directory and session id to `POST /decide` on the Guardian.
+  directory, session id and the model's tool-call id (`call_id`, from
+  `input.callID`) to `POST /decide` on the Guardian. The call id lets the
+  Core cross-check the hook against the proxy (ADR-0004).
 - Runs the tool only if the answer is `allow`. On `deny`, aborts with the
   reason. On `ask`, waits for the owner's answer from the phone.
 - On timeout or connection error, denies.

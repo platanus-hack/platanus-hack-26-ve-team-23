@@ -803,6 +803,29 @@ impl Core {
             .cloned()
             .collect())
     }
+
+    /// The sealed events of `[from_seq, to_seq]`, oldest first, re-read from
+    /// `events.bin`. Payloads stay sealed: the Core cannot read them
+    /// (ADR-0007).
+    pub fn events_range(&self, from_seq: u64, to_seq: u64) -> Result<Vec<Event>, CoreError> {
+        let _guard = self.lock()?;
+        let path = self.dir.join("events.bin");
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        let bytes = fs::read(path)?;
+        let mut offset = 0;
+        let mut out = Vec::new();
+        while offset < bytes.len() {
+            let (event, used) =
+                Event::decode(&bytes[offset..]).ok_or(CoreError::Corrupt("events.bin"))?;
+            if event.seq >= from_seq && event.seq <= to_seq {
+                out.push(event);
+            }
+            offset += used;
+        }
+        Ok(out)
+    }
 }
 
 impl EventMeta {

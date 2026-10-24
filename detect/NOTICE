@@ -1,0 +1,19 @@
+HAWK detection rule catalogue — attribution
+
+The patterns in `detect/rules/default.json` are original, written against
+this project's threat model (ADR-0005, ADR-0010), but some are informed by
+the default rules of the Falco project (https://github.com/falcosecurity/rules),
+which the team studied as a reference for how to express filesystem, network
+and process behaviour as data rules.
+
+Falco's default rules are licensed under the Apache License 2.0:
+
+  Copyright (C) 2019 The Falco Authors.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      https://www.apache.org/licenses/LICENSE-2.0
+
+No Falco rule text is copied verbatim into this repository.

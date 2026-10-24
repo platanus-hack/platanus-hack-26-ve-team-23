@@ -51,6 +51,8 @@ struct Entry {
     nics: Vec<Nic>,
     conflict: Option<String>,
     last_seen_ms: u64,
+    /// The boot measurement reported at hello (ADR-0021).
+    boot_digest: Option<[u8; 32]>,
 }
 
 /// Forgets disconnected hosts, oldest first, until at most `keep` remain.
@@ -88,6 +90,7 @@ impl Entry {
             nics: Vec::new(),
             conflict: None,
             last_seen_ms: 0,
+            boot_digest: None,
         }
     }
 }
@@ -159,6 +162,7 @@ impl Hosts {
         os: &str,
         hwid: &str,
         nics: Vec<Nic>,
+        boot_digest: Option<[u8; 32]>,
         approved: Option<&HostApproval>,
     ) -> Hello {
         // A malformed HWID is dropped, never stored or compared.
@@ -181,6 +185,7 @@ impl Hosts {
             entry.hwid = hwid.to_owned();
             entry.nics = nics.into_iter().take(MAX_NICS).collect();
             entry.conflict = conflict;
+            entry.boot_digest = boot_digest;
             entry.last_seen_ms = now_ms();
         }
         outcome.recontain = self.sticky(peer, ip, mac, hwid);
@@ -271,6 +276,29 @@ impl Hosts {
             .ok()
             .and_then(|e| e.get(peer).map(|e| (e.mac, e.hwid.clone())))
             .unwrap_or_default()
+    }
+
+    /// The boot measurement the host reported at hello (ADR-0021).
+    pub fn boot_digest(&self, peer: &PeerId) -> Option<[u8; 32]> {
+        self.entries.lock().ok()?.get(peer)?.boot_digest
+    }
+
+    /// Live connections of hosts that introduced themselves, for the
+    /// heartbeat round (ADR-0021).
+    pub fn connections(&self) -> Vec<(PeerId, Connection)> {
+        let Ok(entries) = self.entries.lock() else {
+            return Vec::new();
+        };
+        entries
+            .iter()
+            .filter(|(_, e)| !e.hostname.is_empty() && e.is_connected())
+            .filter_map(|(id, e)| e.conn.clone().map(|c| (*id, c)))
+            .collect()
+    }
+
+    /// The address the Core would quarantine for a host (ADR-0018).
+    pub fn address(&self, peer: &PeerId) -> Option<IpAddr> {
+        Some(self.entries.lock().ok()?.get(peer)?.ip)
     }
 
     pub fn seen(&self, peer: &PeerId) {
@@ -377,7 +405,17 @@ mod tests {
     }
 
     fn hello(hosts: &Hosts, peer: PeerId, at: &str, m: Option<Mac>, hwid: &str) -> Hello {
-        hosts.hello(peer, ip(at), m, "rig", "linux", hwid, Vec::new(), None)
+        hosts.hello(
+            peer,
+            ip(at),
+            m,
+            "rig",
+            "linux",
+            hwid,
+            Vec::new(),
+            None,
+            None,
+        )
     }
 
     #[test]
@@ -409,6 +447,7 @@ mod tests {
             "linux",
             other,
             Vec::new(),
+            None,
             Some(&approval),
         );
         assert!(seen.conflict.unwrap().contains("copied"));
@@ -496,6 +535,7 @@ mod tests {
                 &hwid,
                 Vec::new(),
                 None,
+                None,
             );
         }
         assert!(hosts.list(|_, _| false).len() <= MAX_HOSTS);
@@ -507,7 +547,17 @@ mod tests {
         let many: Vec<Nic> = (0..100)
             .map(|i| Nic::new(&format!("eth{i}"), Mac([2, 0, 0, 0, 0, i])))
             .collect();
-        hosts.hello(A, ip("10.0.0.5"), None, "rig", "linux", HWID, many, None);
+        hosts.hello(
+            A,
+            ip("10.0.0.5"),
+            None,
+            "rig",
+            "linux",
+            HWID,
+            many,
+            None,
+            None,
+        );
         let listed = hosts.list(|_, _| false);
         assert_eq!(listed[0].nics.len(), MAX_NICS);
         assert!(!listed[0].connected);

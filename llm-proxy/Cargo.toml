@@ -8,6 +8,18 @@ description = "OpenAI-compatible proxy: forwarding, streaming and tool-call extr
 
 [dependencies]
 guardian-core.workspace = true
+edge-net.workspace = true
+tokio.workspace = true
+hyper.workspace = true
+http-body-util.workspace = true
+futures-util.workspace = true
+bytes.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+http-body-util.workspace = true
+hyper-util.workspace = true
 
 [lints]
 workspace = true

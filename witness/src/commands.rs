@@ -27,12 +27,13 @@ use edge_net::{
 };
 use guardian_core::{
     pairing::{confirmation_code, pair_message},
-    seal,
+    seal, verify,
     wire::{
-        approve_message, configure_message, CoreConfig, FirewallConfig, HostApproval, HostInfo,
-        Request, Response,
+        answer_message, approve_message, configure_message, open_record_message, release_message,
+        CoreConfig, FirewallConfig, HostApproval, HostInfo, PendingAsk, RecordEvent, Request,
+        Response,
     },
-    CorePublic, SignedHead,
+    CorePublic, Event, EventKind, SignedHead,
 };
 use p256::ecdsa::{signature::Signer as _, Signature, SigningKey};
 use quinn::Connection;
@@ -108,6 +109,7 @@ pub struct Dashboard {
     status: Option<serde_json::Value>,
     events: Vec<serde_json::Value>,
     hosts: Vec<HostInfo>,
+    asks: Vec<PendingAsk>,
     heads_total: usize,
     heads_invalid: usize,
     heads: Vec<HeadView>,
@@ -184,6 +186,19 @@ fn parse_id(hex_id: &str) -> Result<PeerId, String> {
         .ok()
         .and_then(|b| b.try_into().ok())
         .ok_or_else(|| "bad core id".to_owned())
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn kind_name(kind: u8) -> String {
+    EventKind::from_u8(kind)
+        .map(|k| format!("{k:?}"))
+        .unwrap_or_else(|| format!("kind {kind}"))
 }
 
 // Network --------------------------------------------------------------------
@@ -501,6 +516,141 @@ pub async fn approve_host(
     }
 }
 
+/// Lifts a host's quarantine with the owner's signature (ADR-0018). `host` is
+/// the address that was quarantined, shown in the dashboard.
+#[tauri::command]
+pub async fn release_host(
+    app: tauri::AppHandle,
+    link: State<'_, Link>,
+    host: String,
+) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    let conn = connect(&dir, &link).await?;
+    let timestamp_ms = now_ms();
+    let message = release_message(&host, timestamp_ms);
+    let signature: Signature = owner_key(&dir)?.sign(&message);
+    let request = Request::Release {
+        host,
+        timestamp_ms,
+        signature: hex::encode(signature.to_der().as_bytes()),
+    };
+    match call(&conn, &request).await? {
+        Response::Ack => Ok(()),
+        other => Err(format!("unexpected answer: {other:?}")),
+    }
+}
+
+/// Answers a pending `ask` (ADR-0022), signed by the owner.
+#[tauri::command]
+pub async fn answer_ask(
+    app: tauri::AppHandle,
+    link: State<'_, Link>,
+    id: String,
+    allow: bool,
+) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    let conn = connect(&dir, &link).await?;
+    let message = answer_message(&id, allow);
+    let signature: Signature = owner_key(&dir)?.sign(&message);
+    let request = Request::Answer {
+        id,
+        allow,
+        signature: hex::encode(signature.to_der().as_bytes()),
+    };
+    match call(&conn, &request).await? {
+        Response::Ack => Ok(()),
+        other => Err(format!("unexpected answer: {other:?}")),
+    }
+}
+
+/// A decrypted event of the record (ADR-0007).
+#[derive(Debug, Serialize)]
+pub struct RecordEntryView {
+    seq: u64,
+    timestamp_ms: u64,
+    kind: String,
+    content: Option<serde_json::Value>,
+}
+
+/// The opened record: whether the chain verified, and the decrypted events.
+#[derive(Debug, Serialize)]
+pub struct RecordView {
+    verified: bool,
+    events: Vec<RecordEntryView>,
+}
+
+/// Opens the sealed record: the owner's signature covers the range; the app
+/// verifies the chain against the last signed head and decrypts each payload
+/// with the epoch key (ADR-0006, ADR-0007).
+#[tauri::command]
+pub async fn open_record(
+    app: tauri::AppHandle,
+    link: State<'_, Link>,
+) -> Result<RecordView, String> {
+    let dir = data_dir(&app)?;
+    let conn = connect(&dir, &link).await?;
+
+    let heads: Vec<SignedHead> = match call(&conn, &Request::Heads { since: None }).await? {
+        Response::Heads { heads } => heads,
+        other => return Err(format!("unexpected answer: {other:?}")),
+    };
+    let last = heads
+        .last()
+        .cloned()
+        .ok_or("the Core has no signed heads yet")?;
+
+    let timestamp_ms = now_ms();
+    let message = open_record_message(0, last.seq, timestamp_ms);
+    let signature: Signature = owner_key(&dir)?.sign(&message);
+    let request = Request::OpenRecord {
+        from_seq: 0,
+        to_seq: last.seq,
+        timestamp_ms,
+        signature: hex::encode(signature.to_der().as_bytes()),
+    };
+    let records: Vec<RecordEvent> = match call(&conn, &request).await? {
+        Response::Record { events } => events,
+        other => return Err(format!("unexpected answer: {other:?}")),
+    };
+
+    // Rebuild the events and verify the chain against the last signed head.
+    let mut events = Vec::with_capacity(records.len());
+    for record in &records {
+        let kind = EventKind::from_u8(record.kind)
+            .ok_or_else(|| format!("unknown event kind {}", record.kind))?;
+        events.push(Event {
+            seq: record.seq,
+            timestamp_ms: record.timestamp_ms,
+            kind,
+            payload: hex::decode(&record.payload).map_err(|_| "bad payload hex")?,
+        });
+    }
+    let verified = verify(&events, last.seq, &last.head).is_ok();
+
+    // Decrypt each payload with the epoch key.
+    let epoch = secret32(&dir, "epoch.key")?;
+    let entries = records
+        .into_iter()
+        .map(|record| {
+            let payload = hex::decode(&record.payload).unwrap_or_default();
+            let content = seal::open(&epoch, &payload)
+                .ok()
+                .and_then(|plain| serde_json::from_slice(&plain).ok());
+            RecordEntryView {
+                seq: record.seq,
+                timestamp_ms: record.timestamp_ms,
+                kind: kind_name(record.kind),
+                content,
+            }
+        })
+        .collect();
+
+    Ok(RecordView {
+        verified,
+        events: entries,
+    })
+}
+
 /// Forgets the paired Core on this device, to run the wizard again. The
 /// keys stay; the Core keeps its pairing until it is reset.
 #[tauri::command]
@@ -527,6 +677,7 @@ pub async fn dashboard(app: tauri::AppHandle, link: State<'_, Link>) -> Result<D
         status: None,
         events: Vec::new(),
         hosts: Vec::new(),
+        asks: Vec::new(),
         heads_total: 0,
         heads_invalid: 0,
         heads: Vec::new(),
@@ -549,6 +700,10 @@ pub async fn dashboard(app: tauri::AppHandle, link: State<'_, Link>) -> Result<D
     };
     let hosts = match call(&conn, &Request::Hosts).await {
         Ok(Response::Hosts { hosts }) => hosts,
+        _ => Vec::new(),
+    };
+    let asks = match call(&conn, &Request::PendingAsks).await {
+        Ok(Response::Asks { asks }) => asks,
         _ => Vec::new(),
     };
     let heads: Vec<SignedHead> = match call(&conn, &Request::Heads { since: None }).await {
@@ -578,6 +733,7 @@ pub async fn dashboard(app: tauri::AppHandle, link: State<'_, Link>) -> Result<D
         status: Some(status),
         events,
         hosts,
+        asks,
         heads_total: views.len(),
         heads_invalid: invalid,
         heads: views.into_iter().skip(skip).collect(),

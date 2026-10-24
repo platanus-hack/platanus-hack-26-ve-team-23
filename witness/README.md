@@ -7,9 +7,11 @@ builds the Android APK and a desktop build used for development (ADR-0013).
   activation wizard (find by mDNS, verify fingerprint, pair, configure);
   dashboard (state, decisions over time, rules, hosts, events, integrity);
   every signed head verified against the identity pinned at pairing; hosts
-  listed by fingerprint with an Identify button. Pending: opening the sealed
-  record, answering `ask`, alerts, Android Keystore, multicast lock and
-  passkeys (see `PENDIENTES.md`).
+  listed by fingerprint with an Identify button and a Release button on
+  contained hosts; the Record view opens the sealed record, verifies the
+  chain and decrypts it with the epoch key; an "Asks" inbox answers pending
+  `ask`s with the owner's signature and alerts appear as a notice. Pending:
+  Android Keystore, multicast lock and passkeys (see `PENDIENTES.md`).
 
 ## Activation wizard (ADR-0024)
 

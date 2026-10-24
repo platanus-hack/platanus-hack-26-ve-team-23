@@ -109,4 +109,16 @@ Windows TPM access reuses the approach of Nepheral's `tpm.rs`.
 
 ## History
 
+- v1.2 (2026-10-24): the boot measurement is wired end to end: the daemon
+  reads the PCRs (`host-daemon/src/tpm.rs`, Linux only for now) and reports
+  the digest in `HostHello` and in every signed heartbeat; the Core stores it
+  at hello and quarantines a host whose heartbeat carries a different
+  measurement. The TPM-signed quote and the non-exportable key are still the
+  hardware follow-up.
+- v1.1 (2026-10-24): the software parts are implemented: owner enrolment of
+  the host identity (ADR-0023), a challenge-response heartbeat signed with
+  the daemon's Ed25519 key carrying a monotonic counter and the digest of the
+  observed calls, and the dead man's switch that quarantines a host silent
+  for 15 s. The key still lives in `host.key` (software); sealing it in the
+  TPM/vTPM and the measured-boot quote stay pending (hardware).
 - v1.0 (2026-10-24): Initial decision.
