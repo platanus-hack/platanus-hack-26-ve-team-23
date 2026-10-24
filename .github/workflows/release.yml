@@ -255,7 +255,8 @@ jobs:
               -keyalg RSA -keysize 2048 -validity 3650 -dname "CN=HAWK test build"
           fi
           "$tools/zipalign" -f -p 4 "$apk" "$RUNNER_TEMP/aligned.apk"
-          "$tools/apksigner" sign --ks "$ks" --ks-pass "pass:$pass" --ks-key-alias "$alias" \
+          # No v4 scheme: it writes a separate .idsig file nobody installs.
+          "$tools/apksigner" sign --v4-signing-enabled false --ks "$ks" --ks-pass "pass:$pass" --ks-key-alias "$alias" \
             --out "dist/hawk-witness-$V-android-arm64.apk" "$RUNNER_TEMP/aligned.apk"
           "$tools/apksigner" verify "dist/hawk-witness-$V-android-arm64.apk"
           rm -f "$ks"
