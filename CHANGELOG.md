@@ -8,6 +8,12 @@ Every entry is written when the change is merged, under `Unreleased`.
 
 ## [Unreleased]
 
+### Fixed
+
+- Claude Code's `PowerShell` tool on Windows (and `pwsh`, `cmd`) is judged as a
+  command by the rules; before 0.1.5 it was recorded but no rule read it.
+  The record keeps which shell it was. Version 0.1.5.
+
 ### Added
 
 - ADR-0034 and Claude Code and Codex hooks: `hawk-host-daemon hook

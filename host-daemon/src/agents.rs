@@ -114,11 +114,15 @@ pub fn normalize(agent: Agent, input: HookInput) -> ToolCall {
     let raw = input.tool_input;
     let name = input.tool_name.to_ascii_lowercase();
     let (tool, args) = match name.as_str() {
-        "bash" | "shell" | "local_shell" | "exec_command" | "unified_exec" => {
+        // Every terminal tool, Windows ones included (Claude Code runs a
+        // `PowerShell` tool there), is judged as a command; `shell` keeps
+        // which one it was for the record.
+        "bash" | "shell" | "local_shell" | "exec_command" | "unified_exec" | "powershell"
+        | "pwsh" | "cmd" => {
             let command = string_field(&raw, &["command", "cmd"]).unwrap_or_default();
             (
                 "bash".to_owned(),
-                json!({ "command": command, "input": raw }),
+                json!({ "command": command, "shell": name, "input": raw }),
             )
         }
         "write" => {
@@ -439,6 +443,17 @@ mod tests {
         assert_eq!(call.session, "claude:s1");
         assert_eq!(call.cwd, "/work");
         assert_eq!(call.call_id.as_deref(), Some("toolu_1"));
+    }
+
+    #[test]
+    fn windows_powershell_commands_reach_the_rules() {
+        let call = normalize(
+            Agent::Claude,
+            input("PowerShell", json!({ "command": "Get-ChildItem C:\\work" })),
+        );
+        assert_eq!(call.tool, "bash");
+        assert_eq!(call.args["command"], "Get-ChildItem C:\\work");
+        assert_eq!(call.args["shell"], "powershell");
     }
 
     #[test]

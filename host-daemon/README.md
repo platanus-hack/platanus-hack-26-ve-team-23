@@ -40,7 +40,7 @@ binary is that hook:
 
 | Command | What it does |
 |---|---|
-| `hawk-host-daemon hook claude` / `hook codex` | Reads the call on stdin, normalises it (`Bash`, `exec_command` → `bash`; `Write`, `Edit`, `apply_patch` → `write`/`edit` with `path`; …), asks this daemon (`HOST_DAEMON_URL`, default `http://127.0.0.1:7070`) and exits 2 to block. Any failure blocks. |
+| `hawk-host-daemon hook claude` / `hook codex` | Reads the call on stdin, normalises it (`Bash`, `exec_command`, Windows `PowerShell` → `bash`; `Write`, `Edit`, `apply_patch` → `write`/`edit` with `path`; …), asks this daemon (`HOST_DAEMON_URL`, default `http://127.0.0.1:7070`) and exits 2 to block. Any failure blocks. |
 | `hawk-host-daemon hooks install [claude\|codex]` | Registers the hook in `~/.claude/settings.json` (with `"onFailure": "block"`) and `~/.codex/hooks.json`, keeping every other setting and a `.hawk-backup` of the first version. Codex asks to approve the hook once (`/hooks`). |
 | `hawk-host-daemon hooks uninstall` / `hooks status` | Removes only HAWK's entry / says whether each agent is watched. |
 
