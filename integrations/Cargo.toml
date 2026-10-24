@@ -1,0 +1,33 @@
+[package]
+name = "integrations"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "Firewall adapters (OpenWrt, MikroTik, dry run) and event sinks (Kafka, webhook)."
+
+[features]
+default = ["mikrotik", "openwrt", "kafka", "webhook"]
+mikrotik = []
+openwrt = []
+kafka = ["dep:rskafka"]
+webhook = []
+
+[dependencies]
+tokio.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+http-body-util.workspace = true
+bytes.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+hex.workspace = true
+tracing.workspace = true
+base64.workspace = true
+rustls.workspace = true
+hyper-rustls.workspace = true
+rskafka = { workspace = true, optional = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,55 @@
+#!/bin/sh
+# rpcd exec plugin: the `guardian` ubus object (ADR-0018).
+# Install as /usr/libexec/rpcd/guardian (mode 0755), then /etc/init.d/rpcd restart.
+#
+# It only adds, removes and lists IPv4 addresses in the nftables set
+# `guardian_quarantine` defined in /etc/nftables.d/guardian.nft. Nothing else.
+
+SET="inet fw4 guardian_quarantine"
+
+valid_ipv4() {
+	echo "$1" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || return 1
+	for octet in $(echo "$1" | tr '.' ' '); do
+		[ "$octet" -le 255 ] || return 1
+	done
+}
+
+read_address() {
+	. /usr/share/libubox/jshn.sh
+	read -r input
+	json_load "$input"
+	json_get_var address address
+	echo "$address"
+}
+
+reply() {
+	printf '{"ok":%s,"message":"%s"}\n' "$1" "$2"
+}
+
+case "$1" in
+	list)
+		echo '{"add":{"address":"str"},"remove":{"address":"str"},"list":{}}'
+		;;
+	call)
+		case "$2" in
+			add)
+				address="$(read_address)"
+				valid_ipv4 "$address" || { reply false "invalid address"; exit 0; }
+				nft add element $SET "{ $address }" 2>/dev/null
+				logger -t guardian "quarantined $address"
+				reply true "quarantined"
+				;;
+			remove)
+				address="$(read_address)"
+				valid_ipv4 "$address" || { reply false "invalid address"; exit 0; }
+				nft delete element $SET "{ $address }" 2>/dev/null
+				logger -t guardian "released $address"
+				reply true "released"
+				;;
+			list)
+				elements="$(nft -j list set $SET 2>/dev/null)"
+				printf '{"set":%s}\n' "${elements:-null}"
+				;;
+		esac
+		;;
+esac

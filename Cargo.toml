@@ -6,6 +6,7 @@ members = [
     "edge-net",
     "guardian",
     "host-daemon",
+    "integrations",
     "eval",
     "witness",
 ]
@@ -23,6 +24,7 @@ guardian-core = { path = "guardian-core" }
 detect = { path = "detect" }
 llm-proxy = { path = "llm-proxy" }
 edge-net = { path = "edge-net" }
+integrations = { path = "integrations" }
 
 tokio = { version = "1.36", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -35,6 +37,10 @@ hyper = { version = "1", features = ["server", "client", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio", "client-legacy", "http1"] }
 http-body-util = "0.1"
 bytes = "1"
+base64 = "0.22"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "tls12", "ring"] }
+rskafka = { version = "0.6", default-features = false }
 
 # Cryptography: established crates only, never our own primitives (ADR-0014).
 ed25519-dalek = "2"

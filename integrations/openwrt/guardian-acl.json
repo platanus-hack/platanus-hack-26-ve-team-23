@@ -1,0 +1,9 @@
+{
+	"guardian-core": {
+		"description": "The Guardian Core may only use the guardian object",
+		"ubus": {
+			"guardian": ["add", "remove", "list"],
+			"session": ["access", "login"]
+		}
+	}
+}
