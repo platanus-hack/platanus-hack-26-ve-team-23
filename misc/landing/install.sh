@@ -12,7 +12,7 @@
 #
 # Options (or the environment variable in brackets):
 #   --core IP:PORT     skip discovery and use this Core        [HAWK_CORE]
-#   --version X.Y.Z    release to install (default 0.1.1)       [HAWK_VERSION]
+#   --version X.Y.Z    release to install (default 0.1.2)       [HAWK_VERSION]
 #   --base-url URL     where the release files are served        [HAWK_BASE_URL]
 #   --no-service       install the binary only, no systemd unit  [HAWK_NO_SERVICE=1]
 #   --no-plugin        do not install the OpenCode plugin        [HAWK_NO_PLUGIN=1]
@@ -21,7 +21,7 @@
 
 set -eu
 
-VERSION="${HAWK_VERSION:-0.1.1}"
+VERSION="${HAWK_VERSION:-0.1.2}"
 BASE_URL="${HAWK_BASE_URL:-}"
 CORE="${HAWK_CORE:-}"
 NO_SERVICE="${HAWK_NO_SERVICE:-0}"

@@ -292,8 +292,18 @@ jobs:
       - name: Redeploy the landing (publishes /downloads/)
         run: |
           if [ -z "$RENDER_DEPLOY_HOOK_LANDING" ]; then
-            echo "RENDER_DEPLOY_HOOK_LANDING not set: redeploy the landing by hand"
+            echo "::warning::RENDER_DEPLOY_HOOK_LANDING not set: redeploy the landing by hand"
             exit 0
           fi
-          curl -fsS -X POST "$RENDER_DEPLOY_HOOK_LANDING" > /dev/null
-          echo "landing redeploy requested"
+          # The files are already in the release; a failed hook only delays
+          # the downloads page, so warn instead of failing the release.
+          hook="$(printf '%s' "$RENDER_DEPLOY_HOOK_LANDING" | tr -d '[:space:]')"
+          case "$hook" in
+            https://api.render.com/deploy/srv-*) ;;
+            *) echo "::warning::RENDER_DEPLOY_HOOK_LANDING is not a Render deploy hook (length ${#hook}); redeploy by hand"; exit 0 ;;
+          esac
+          if curl -fsS -X POST "$hook" > /dev/null; then
+            echo "landing redeploy requested"
+          else
+            echo "::warning::the landing deploy hook failed; redeploy by hand"
+          fi
