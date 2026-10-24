@@ -80,7 +80,7 @@ GROUPS = [
     "Otros",
 ]
 KINDS = [
-    (re.compile(r"android.*\.apk$"), 0, "Android. Versión de prueba, firmada en modo debug."),
+    (re.compile(r"android-arm64\.apk$"), 0, "Android, teléfonos de 64 bits. Permite instalar apps de origen desconocido para abrirlo."),
     (re.compile(r"universal-macos\.dmg$"), 0, "macOS, Apple Silicon e Intel."),
     (re.compile(r"windows-setup\.exe$"), 0, "Windows 10 y 11."),
     (re.compile(r"\.deb$"), 0, "Linux: Debian, Ubuntu y derivadas."),
@@ -191,7 +191,11 @@ def main():
             data = sums_raw if name == "SHA256SUMS" else _get(asset["url"], token, "application/octet-stream")
             digest = hashlib.sha256(data).hexdigest()
             if name not in ("SHA256SUMS", "SHA256SUMS.minisig"):
-                if sums.get(name) != digest:
+                if name not in sums:
+                    # Never publish a file the release does not vouch for.
+                    print(f"skipping {version}/{name}: not in SHA256SUMS")
+                    continue
+                if sums[name] != digest:
                     raise SystemExit(f"{version}/{name}: does not match SHA256SUMS")
             with open(os.path.join(target, name), "wb") as fh:
                 fh.write(data)

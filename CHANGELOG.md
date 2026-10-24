@@ -27,7 +27,9 @@ Every entry is written when the change is merged, under `Unreleased`.
   before installing it: it runs inside OpenCode, and before it was copied
   unchecked. The downloads page groups the files (app, program for each
   computer, Core, plugin, verification) and says what each one is.
-- The release collects the Android APK (the step failed under pipefail).
+- The Android APK is a release build for arm64, zipaligned and signed (with
+  `ANDROID_KEYSTORE_B64` when set, a test key otherwise): about 700 MB as a
+  debug build for four ABIs before. Version 0.1.3 is the first with it.
 - Landing: the hero spells out Hardware Autonomous Watcher & Keeper; the
   Core runs today on a dedicated device (a Raspberry Pi 4 or another 64-bit
   Linux machine) and the next step needs one able to run a Granite 4 class

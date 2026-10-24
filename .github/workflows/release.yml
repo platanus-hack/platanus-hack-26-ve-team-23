@@ -206,11 +206,16 @@ jobs:
     name: app (Android, experimental)
     needs: meta
     runs-on: ubuntu-24.04
-    # A debug-signed APK until the release keystore exists; it never blocks
-    # the release.
+    # A release build for arm64 (every current phone), signed with the
+    # keystore in ANDROID_KEYSTORE_B64 when it exists, otherwise with a test
+    # key made here (updating then needs uninstalling first). A debug build
+    # for four ABIs weighed about 700 MB. It never blocks the release.
     continue-on-error: true
     env:
       V: ${{ needs.meta.outputs.version }}
+      ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -221,7 +226,7 @@ jobs:
           java-version: "17"
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android
+          targets: aarch64-linux-android
       # The Gradle project calls back into the CLI that generated it; through
       # npx it would call `npm`, which needs a package.json, so use cargo's.
       - name: Tauri CLI
@@ -231,15 +236,30 @@ jobs:
         run: |
           export NDK_HOME="$ANDROID_NDK_LATEST_HOME"
           cargo tauri android init --ci
-          cargo tauri android build --apk --debug
-      - name: Collect
+          cargo tauri android build --apk --target aarch64
+      - name: Sign
         run: |
           mkdir -p dist
           # -print -quit, not `| head`: with pipefail a closed pipe fails the step.
-          apk="$(find witness/gen/android -name '*.apk' -path '*universal*' -print -quit)"
-          [ -n "$apk" ] || apk="$(find witness/gen/android -name '*.apk' -print -quit)"
-          [ -n "$apk" ] || { echo "no APK"; exit 1; }
-          cp "$apk" "dist/hawk-witness-$V-android-debug.apk"
+          apk="$(find witness/gen/android -name '*release*.apk' -print -quit)"
+          [ -n "$apk" ] || { echo "no release APK"; find witness/gen/android -name '*.apk'; exit 1; }
+          tools="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
+          ks="$RUNNER_TEMP/hawk.keystore"
+          if [ -n "$ANDROID_KEYSTORE_B64" ]; then
+            printf '%s' "$ANDROID_KEYSTORE_B64" | base64 -d > "$ks"
+            pass="$ANDROID_KEYSTORE_PASSWORD"; alias="${ANDROID_KEY_ALIAS:-hawk}"
+          else
+            echo "::warning::ANDROID_KEYSTORE_B64 not set: signing with a test key"
+            pass="hawk-test"; alias="hawk"
+            keytool -genkeypair -keystore "$ks" -storepass "$pass" -keypass "$pass" -alias "$alias" \
+              -keyalg RSA -keysize 2048 -validity 3650 -dname "CN=HAWK test build"
+          fi
+          "$tools/zipalign" -f -p 4 "$apk" "$RUNNER_TEMP/aligned.apk"
+          "$tools/apksigner" sign --ks "$ks" --ks-pass "pass:$pass" --ks-key-alias "$alias" \
+            --out "dist/hawk-witness-$V-android-arm64.apk" "$RUNNER_TEMP/aligned.apk"
+          "$tools/apksigner" verify "dist/hawk-witness-$V-android-arm64.apk"
+          rm -f "$ks"
+          ls -l dist
       - uses: actions/upload-artifact@v4
         with:
           name: android
