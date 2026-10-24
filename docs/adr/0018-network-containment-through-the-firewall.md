@@ -63,6 +63,11 @@ is dropped. Adapters behind one trait:
   quarantined traffic is installed once by the owner.
 - **The Core is never cut:** the quarantine rule allows the Core so the
   record keeps flowing.
+- **No NAT between monitored hosts and the Core:** the Core contains the
+  address of the authenticated peer it sees. If a router masquerades the
+  host's traffic towards the Core, that address is the router's, and the
+  cut would miss the host. Routers between hosts and the Core route without
+  NAT (masquerading only towards the internet). `docs/LAB.md` shows how.
 
 ## Dependencies and licences
 
@@ -105,3 +110,5 @@ is dropped. Adapters behind one trait:
 
 - v1.0 (2026-10-24): Initial decision.
 - v1.1 (2026-10-24): OpenWrt added as a first adapter, before acceptance.
+- v1.2 (2026-10-24): No NAT between monitored hosts and the Core, before
+  acceptance.
