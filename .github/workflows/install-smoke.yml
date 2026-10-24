@@ -30,6 +30,15 @@ jobs:
     env:
       SITE: ${{ github.event.inputs.site || 'https://hawkeeper.xyz' }}
     steps:
+      - name: Wait for the downloads of the installer's version
+        run: |
+          v="$(curl -fsSL "$SITE/install.sh" | sed -n 's/^VERSION="\${HAWK_VERSION:-\(.*\)}"$/\1/p')"
+          echo "installer version: $v"
+          for i in $(seq 1 30); do
+            curl -fsS -o /dev/null "$SITE/downloads/v$v/SHA256SUMS" && exit 0
+            sleep 10
+          done
+          echo "downloads for $v not published"; exit 1
       - name: Install as a user would
         run: curl -fsSL "$SITE/install.sh" | sh -s -- --core 127.0.0.1:7443
       - name: What it installed
@@ -61,6 +70,15 @@ jobs:
     env:
       SITE: ${{ github.event.inputs.site || 'https://hawkeeper.xyz' }}
     steps:
+      - name: Wait for the downloads of the installer's version
+        run: |
+          v="$(curl -fsSL "$SITE/install.sh" | sed -n 's/^VERSION="\${HAWK_VERSION:-\(.*\)}"$/\1/p')"
+          echo "installer version: $v"
+          for i in $(seq 1 30); do
+            curl -fsS -o /dev/null "$SITE/downloads/v$v/SHA256SUMS" && exit 0
+            sleep 10
+          done
+          echo "downloads for $v not published"; exit 1
       - name: Install as a user would
         run: curl -fsSL "$SITE/install.sh" | sh -s -- --core 127.0.0.1:7443
       - name: What it installed
