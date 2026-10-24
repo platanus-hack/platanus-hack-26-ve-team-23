@@ -10,6 +10,14 @@ Every entry is written when the change is merged, under `Unreleased`.
 
 ### Added
 
+- ADR-0034 and Claude Code and Codex hooks: `hawk-host-daemon hook
+  claude|codex` is their `PreToolUse` hook (normalises the call, asks the
+  daemon, blocks on any failure), and `hooks install|uninstall|status` edits
+  their configuration keeping everything else and a backup. `install.sh`
+  registers it for the agents it finds (from 0.1.4). The Core now compares
+  a `decide` with the model's proposals only on hosts that use the proxy,
+  so an agent talking to its model directly raises no false alerts.
+
 - ADR-0033: attention thresholds the owner sets from the app.
   `CoreConfig.thresholds { ask_from, deny_from }` travels in the signed
   configuration chain (left out of the JSON while default, so older

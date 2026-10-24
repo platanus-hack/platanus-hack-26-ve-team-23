@@ -67,6 +67,7 @@ supersedes it; the old one only has its status updated.
 | [0031](0031-witness-app-design-and-ui-contract.md) | The owner app's design, information structure and UI contract | Proposed |
 | [0032](0032-ci-releases-and-public-downloads.md) | Continuous integration, releases and public downloads | Proposed |
 | [0033](0033-owner-attention-thresholds.md) | Attention thresholds the owner sets from the app | Proposed |
+| [0034](0034-every-agent-and-model-on-the-host.md) | Every agent and every model on the host, as far as each allows | Proposed |
 
 ## Open questions
 

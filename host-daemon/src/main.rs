@@ -19,6 +19,7 @@
 
 #![forbid(unsafe_code)]
 
+mod agents;
 mod heartbeat;
 mod machine;
 mod notice;
@@ -419,8 +420,55 @@ where
     }
 }
 
+/// `hook <agent>` and `hooks <install|uninstall|status> [agent]` (ADR-0034).
+/// They run before logging starts: the agent reads the hook's stdout.
+async fn command(args: &[String]) -> Option<i32> {
+    use std::io::Write as _;
+    match args.first().map(String::as_str) {
+        Some("hook") => {
+            let Some(agent) = args.get(1).and_then(|a| agents::Agent::parse(a)) else {
+                eprintln!("usage: hawk-host-daemon hook <claude|codex>");
+                return Some(2);
+            };
+            let daemon =
+                std::env::var("HOST_DAEMON_URL").unwrap_or_else(|_| "http://127.0.0.1:7070".into());
+            Some(agents::run_hook(agent, &daemon).await)
+        }
+        Some("hooks") => {
+            let action = args.get(1).map(String::as_str).unwrap_or("status");
+            let only = args.get(2).and_then(|a| agents::Agent::parse(a));
+            let home = std::env::var_os("HOME")
+                .or_else(|| std::env::var_os("USERPROFILE"))
+                .map(PathBuf::from);
+            let (Some(home), Ok(exe)) = (home, std::env::current_exe()) else {
+                eprintln!("hawk-host-daemon: no home directory or executable path");
+                return Some(1);
+            };
+            match agents::manage(action, only, &home, &exe) {
+                Ok(lines) => {
+                    let mut out = std::io::stdout();
+                    for line in lines {
+                        let _ = writeln!(out, "{line}");
+                    }
+                    Some(0)
+                }
+                Err(err) => {
+                    eprintln!("hawk-host-daemon: {err}");
+                    Some(1)
+                }
+            }
+        }
+        _ => None,
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(code) = command(&args).await {
+        std::process::exit(code);
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();

@@ -33,6 +33,21 @@ response sends a `ProxyRecord` to the Core over QUIC. The plugin must send the
 model's tool-call id as `call_id` (from `input.callID`) so the Core can
 cross-check the two.
 
+## Claude Code and Codex (ADR-0034)
+
+Both agents run a `PreToolUse` command hook before every tool call. This
+binary is that hook:
+
+| Command | What it does |
+|---|---|
+| `hawk-host-daemon hook claude` / `hook codex` | Reads the call on stdin, normalises it (`Bash`, `exec_command` → `bash`; `Write`, `Edit`, `apply_patch` → `write`/`edit` with `path`; …), asks this daemon (`HOST_DAEMON_URL`, default `http://127.0.0.1:7070`) and exits 2 to block. Any failure blocks. |
+| `hawk-host-daemon hooks install [claude\|codex]` | Registers the hook in `~/.claude/settings.json` (with `"onFailure": "block"`) and `~/.codex/hooks.json`, keeping every other setting and a `.hawk-backup` of the first version. Codex asks to approve the hook once (`/hooks`). |
+| `hawk-host-daemon hooks uninstall` / `hooks status` | Removes only HAWK's entry / says whether each agent is watched. |
+
+`install.sh` runs `hooks install` for the agents it finds, as the agent's
+user. The session sent to the Core starts with `claude:` or `codex:`, so the
+record says which agent acted.
+
 ## Identification notice
 
 When the owner presses "Identify" for this machine in the app, the Core asks

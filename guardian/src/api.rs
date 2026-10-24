@@ -219,6 +219,10 @@ impl AppState {
         if call_id.is_none() {
             return;
         }
+        // An agent that does not use the proxy has nothing to match (ADR-0034).
+        if !self.crosscheck.proxied(host, crate::core::now_ms()) {
+            return;
+        }
         if self.crosscheck.matched(call_id) == Match::Matched {
             return;
         }
@@ -1652,6 +1656,19 @@ mod tests {
         let s = state_with(&dir, Detector::new(), Arc::new(DryRun::default()));
         pair(s.core());
 
+        // The host's agent uses the proxy: one exchange without tool calls.
+        let record = ProxyRecord {
+            timestamp_ms: 0,
+            path: "/v1/chat/completions".into(),
+            request: serde_json::json!({}),
+            response: None,
+            tool_calls: vec![],
+        };
+        assert!(matches!(
+            handle(s.clone(), STRANGER, addr(), Request::ProxyRecord { record }).await,
+            Response::Ack
+        ));
+
         let mut call = bash("ls");
         call.call_id = Some("ghost".into());
         assert!(decide_req(&s, call).await.is_allow());
@@ -1659,6 +1676,21 @@ mod tests {
         let alerts = alerts(&s).await;
         assert_eq!(alerts.len(), 1);
         assert_eq!(alerts[0]["severity"], "high");
+    }
+
+    #[tokio::test]
+    async fn an_agent_outside_the_proxy_raises_no_cross_check_alert() {
+        let dir = TempDir::new("cc-direct");
+        let s = state_with(&dir, Detector::new(), Arc::new(DryRun::default()));
+        pair(s.core());
+
+        // Claude Code or Codex talking to their model directly: the hook
+        // sends a call id the proxy never saw.
+        let mut call = bash("ls");
+        call.session = "claude:s1".into();
+        call.call_id = Some("toolu_1".into());
+        assert!(decide_req(&s, call).await.is_allow());
+        assert!(alerts(&s).await.is_empty());
     }
 
     /// Pairs `core` and returns the owner signing key, so a test can sign a

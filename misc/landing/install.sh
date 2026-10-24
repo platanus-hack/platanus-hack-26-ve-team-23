@@ -7,8 +7,9 @@
 #
 # Installs the host daemon from the HAWK release on this machine, runs it as
 # its own system user under systemd (the daemon must never run as the same
-# user as the agents), and installs the OpenCode plugin for the user who ran
-# the command. Every download is checked against SHA256SUMS.
+# user as the agents), installs the OpenCode plugin for the user who ran the
+# command, and registers HAWK's hook in Claude Code and Codex when they are
+# there (ADR-0034). Every download is checked against SHA256SUMS.
 #
 # Options (or the environment variable in brackets):
 #   --core IP:PORT     skip discovery and use this Core        [HAWK_CORE]
@@ -16,6 +17,7 @@
 #   --base-url URL     where the release files are served        [HAWK_BASE_URL]
 #   --no-service       install the binary only, no systemd unit  [HAWK_NO_SERVICE=1]
 #   --no-plugin        do not install the OpenCode plugin        [HAWK_NO_PLUGIN=1]
+#   --no-hooks         do not register the Claude Code and Codex hooks [HAWK_NO_HOOKS=1]
 #   --dry-run          print what would change, change nothing   [HAWK_DRY_RUN=1]
 #   --uninstall        remove the daemon, its service and the plugin
 
@@ -26,6 +28,7 @@ BASE_URL="${HAWK_BASE_URL:-}"
 CORE="${HAWK_CORE:-}"
 NO_SERVICE="${HAWK_NO_SERVICE:-0}"
 NO_PLUGIN="${HAWK_NO_PLUGIN:-0}"
+NO_HOOKS="${HAWK_NO_HOOKS:-0}"
 DRY_RUN="${HAWK_DRY_RUN:-0}"
 UNINSTALL=0
 
@@ -36,6 +39,7 @@ while [ $# -gt 0 ]; do
     --base-url) BASE_URL="${2:?falta la URL}"; shift 2 ;;
     --no-service) NO_SERVICE=1; shift ;;
     --no-plugin) NO_PLUGIN=1; shift ;;
+    --no-hooks) NO_HOOKS=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
     -h|--help) sed -n '2,25p' "$0" 2>/dev/null || true; exit 0 ;;
@@ -78,9 +82,25 @@ AGENT_HOME="$(getent passwd "$AGENT_USER" 2>/dev/null | cut -d: -f6 || true)"
 PLUGIN_DIR="$AGENT_HOME/.config/opencode/plugin"
 PLUGIN_FILE="$PLUGIN_DIR/hawk.ts"
 
+# Runs a command as the agent's user, never as root: the hooks live in that
+# user's Claude Code and Codex configuration.
+as_agent() {
+  if [ "$DRY_RUN" = 1 ]; then printf '    [dry-run] %s\n' "$*"; return 0; fi
+  if [ "$(id -u)" -eq 0 ] && [ "$AGENT_USER" != root ]; then
+    sudo -u "$AGENT_USER" env HOME="$AGENT_HOME" "$@"
+  else
+    "$@"
+  fi
+}
+
 # Uninstall ------------------------------------------------------------------
 if [ "$UNINSTALL" = 1 ]; then
   step "Quitando HAWK de esta máquina"
+  case "$VERSION" in 0.0.*|0.1.[0-3]) ;; *)
+    for bin in "/usr/local/bin/$BIN_NAME" "$AGENT_HOME/.local/bin/$BIN_NAME"; do
+      if [ -x "$bin" ]; then as_agent "$bin" hooks uninstall || true; break; fi
+    done ;;
+  esac
   if have systemctl && [ -f "/etc/systemd/system/$SERVICE.service" ]; then
     as_root systemctl disable --now "$SERVICE" || true
     as_root rm -f "/etc/systemd/system/$SERVICE.service"
@@ -218,6 +238,20 @@ if [ "$NO_PLUGIN" != 1 ]; then
   else
     note "No encontré el plugin en $BASE_URL. Cópialo a mano desde agent-hook/guardian.ts a $PLUGIN_DIR."
   fi
+fi
+
+# Claude Code and Codex hooks (ADR-0034) ----------------------------------------
+# Releases up to 0.1.3 do not know `hooks`: they would start a second daemon.
+case "$VERSION" in 0.0.*|0.1.[0-3]) NO_HOOKS=1 ;; esac
+if [ "$NO_HOOKS" != 1 ]; then
+  if [ "$USE_SYSTEMD" = 1 ]; then BIN="/usr/local/bin/$BIN_NAME"; else BIN="$HOME/.local/bin/$BIN_NAME"; fi
+  for agent in claude codex; do
+    if have "$agent" || [ -d "$AGENT_HOME/.$agent" ]; then
+      step "Conectando $agent con HAWK"
+      as_agent "$BIN" hooks install "$agent" \
+        || note "No pude registrar el hook de $agent. Córrelo a mano: $BIN hooks install $agent"
+    fi
+  done
 fi
 
 # Identity --------------------------------------------------------------------

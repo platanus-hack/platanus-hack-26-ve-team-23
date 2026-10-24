@@ -5,7 +5,12 @@
 //! never proposed means something is executing on its own.
 //!
 //! The call id is the model's tool-call id from the proxy, which the agent
-//! hook sends back as `ToolCall.call_id` (from OpenCode's `input.callID`).
+//! hook sends back as `ToolCall.call_id` (OpenCode's `input.callID`, the
+//! `tool_use_id` of Claude Code and Codex).
+//!
+//! A `decide` is only compared with proposals on hosts whose agents use the
+//! proxy (ADR-0034): an agent that talks to its model directly has no
+//! proposals to match, and must not raise an alert on every call.
 
 use std::{collections::HashMap, net::IpAddr, sync::Mutex, time::Duration};
 
@@ -13,6 +18,9 @@ use guardian_core::wire::ProposedToolCall;
 
 /// How long a proposal stays open before it counts as evasion (ADR-0022).
 pub const WINDOW: Duration = Duration::from_secs(5);
+
+/// How long after its last proxy record a host still counts as proxied.
+pub const PROXIED_FOR: Duration = Duration::from_secs(10 * 60);
 
 /// A proposed tool call that has not yet been matched by a `decide`.
 #[derive(Debug, Clone)]
@@ -36,11 +44,18 @@ pub enum Match {
 #[derive(Debug, Default)]
 pub struct CrossCheck {
     proposals: Mutex<HashMap<String, Proposed>>,
+    /// When each host last sent a proxy record.
+    proxied: Mutex<HashMap<IpAddr, u64>>,
 }
 
 impl CrossCheck {
-    /// Registers the calls the model proposed for `host` at `at_ms`.
+    /// Registers the calls the model proposed for `host` at `at_ms`, and that
+    /// `host` uses the proxy.
     pub fn proposed(&self, host: IpAddr, at_ms: u64, calls: &[ProposedToolCall]) {
+        self.proxied
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(host, at_ms);
         let mut map = self.proposals.lock().unwrap_or_else(|p| p.into_inner());
         for call in calls {
             // Calls without an id (Ollama's native format) cannot be matched.
@@ -57,6 +72,15 @@ impl CrossCheck {
                 },
             );
         }
+    }
+
+    /// Whether `host` sent a proxy record within `PROXIED_FOR` of `now_ms`.
+    pub fn proxied(&self, host: IpAddr, now_ms: u64) -> bool {
+        self.proxied
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(&host)
+            .is_some_and(|at| now_ms.saturating_sub(*at) < PROXIED_FOR.as_millis() as u64)
     }
 
     /// Matches a `decide` by its call id, consuming the proposal.
@@ -127,6 +151,18 @@ mod tests {
         assert_eq!(expired.len(), 1);
         assert_eq!(expired[0].id, "c1");
         assert!(cc.expired(2000 + window_ms).is_empty());
+    }
+
+    #[test]
+    fn only_hosts_that_used_the_proxy_recently_are_proxied() {
+        let cc = CrossCheck::default();
+        let host: IpAddr = "10.0.0.7".parse().unwrap();
+        assert!(!cc.proxied(host, 1000));
+        // Any proxy record counts, with or without tool calls.
+        cc.proposed(host, 1000, &[]);
+        assert!(cc.proxied(host, 1000 + 60_000));
+        assert!(!cc.proxied("10.0.0.8".parse().unwrap(), 1000));
+        assert!(!cc.proxied(host, 1000 + PROXIED_FOR.as_millis() as u64));
     }
 
     #[test]
