@@ -24,7 +24,9 @@ installed on the development machine).
 
 The same Blueprint publishes `misc/landing` as the static site
 `hawk-landing` (free plan, rebuilt only when `misc/landing` changes) at
-`https://hawk-landing.onrender.com`, which is the URL in the landing's
+`https://hawkeeper.xyz` (custom domain on `hawk-landing.onrender.com`;
+DNS at Namecheap: `A @ 216.24.57.1`, `CNAME www hawk-landing.onrender.com`),
+which is the URL in the landing's
 install command. `install.sh` is served as `text/plain` so it can be read in
 a browser before it is piped to `sh`. Its build runs
 `misc/landing/fetch_downloads.py`, which needs the service variable

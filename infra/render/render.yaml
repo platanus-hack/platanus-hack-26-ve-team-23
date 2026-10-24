@@ -2,9 +2,9 @@
 # configuration store (ADR-0026, ADR-0027) as an S3-compatible service with
 # Object Lock.
 #
-# hawk-landing is a static site (free plan) served from misc/landing; its URL
-# (https://hawk-landing.onrender.com) is the one in the landing's install
-# command. If Render gives the service another name, update misc/landing.
+# hawk-landing is a static site (free plan) served from misc/landing at
+# https://hawkeeper.xyz (custom domain, apex A 216.24.57.1 and www CNAME to
+# hawk-landing.onrender.com), the URL in the install command and install.sh.
 #
 # RustFS (Apache-2.0, S3-compatible, Object Lock in compliance mode). Use
 # version 1.0.0-rc.1 or later: earlier versions could delete locked objects

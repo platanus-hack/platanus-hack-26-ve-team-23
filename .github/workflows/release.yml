@@ -279,7 +279,7 @@ jobs:
         run: |
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" --verify-tag --prerelease --title "HAWK $V" \
-              --notes "Downloads: https://hawk-landing.onrender.com/downloads/ . Checksums in SHA256SUMS."
+              --notes "Downloads: https://hawkeeper.xyz/downloads/ . Checksums in SHA256SUMS."
           fi
           gh release upload "$TAG" dist/* --clobber
       - name: Redeploy the landing (publishes /downloads/)

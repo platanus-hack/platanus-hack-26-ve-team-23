@@ -10,6 +10,11 @@ Every entry is written when the change is merged, under `Unreleased`.
 
 ### Changed
 
+- Version 0.1.1: the first release built by `release.yml`. The v0.1.0
+  release, built by hand from `887ae46`, stays as published.
+- The landing, the installer and the release notes use
+  `https://hawkeeper.xyz`.
+
 - Documentation synced with the code: `CLAUDE.md` describes `llm-proxy` and
   `eval` as built, counts ADRs 0001 to 0030 and names the `origin` remote;
   the roadmap adds M12 (repository clean-up), M13 (landing page and app
@@ -48,7 +53,8 @@ Every entry is written when the change is merged, under `Unreleased`.
   says "suma" instead of "firma", and verifies a minisign signature once the
   key exists.
 - `infra/render`: the landing page as the static site `hawk-landing`
-  (`https://hawk-landing.onrender.com`, the URL in the install command).
+  at `https://hawkeeper.xyz`, the URL in the install command, the
+  installer and the release notes.
 - `witness/ui`: the app screens rebuilt on the twelve commands of
   `commands.rs` (overview, machines, events, record, settings, activation),
   Spanish and English, an SVG chart with a table alternative, sheets for
