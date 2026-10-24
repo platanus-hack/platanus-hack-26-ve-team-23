@@ -235,8 +235,9 @@ jobs:
       - name: Collect
         run: |
           mkdir -p dist
-          apk="$(find witness/gen/android -name '*.apk' -path '*universal*' | head -n1)"
-          [ -n "$apk" ] || apk="$(find witness/gen/android -name '*.apk' | head -n1)"
+          # -print -quit, not `| head`: with pipefail a closed pipe fails the step.
+          apk="$(find witness/gen/android -name '*.apk' -path '*universal*' -print -quit)"
+          [ -n "$apk" ] || apk="$(find witness/gen/android -name '*.apk' -print -quit)"
           [ -n "$apk" ] || { echo "no APK"; exit 1; }
           cp "$apk" "dist/hawk-witness-$V-android-debug.apk"
       - uses: actions/upload-artifact@v4
