@@ -35,6 +35,11 @@ Every entry is written when the change is merged, under `Unreleased`.
 - ADR-0021 (daemon attestation, challenge-response heartbeat, dead man's
   switch, eBPF sensors) and ADR-0022 (severities and defaults: fail closed
   on failure, not on silence); `docs/ACTION-TREE.md`.
+- Pairing helpers shared in `guardian-core`; Core endpoints `/identity`,
+  `/pair`, `/status`, `/heads`, `/events`; containment of the request's TCP
+  peer on a critical finding and publishing to the sinks.
+- Witness app connected to the Core: pairing, dashboard and verification of
+  signed heads against the pinned identity.
 - First vertical slice: OpenCode plugin (`agent-hook/guardian.ts`) ->
   host daemon relay -> Core `/decide` with the rule engine and policy;
   denies when the daemon or the Core is unreachable.

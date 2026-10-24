@@ -15,6 +15,7 @@ use detect::Detector;
 use edge_net::http::{json, read_json, text, Body};
 use guardian_core::{Decision, ToolCall};
 use hyper::{Method, Request, Response, StatusCode};
+use integrations::{sinks::Publisher, Firewall, SinkEvent};
 
 use crate::core::{Core, CoreError, PairRequest};
 
@@ -24,13 +25,22 @@ const MAX_BODY_BYTES: usize = 256 * 1024;
 #[derive(Debug, Clone)]
 pub struct AppState {
     core: Arc<Core>,
+    firewall: Arc<dyn Firewall>,
+    publisher: Publisher,
     detector: Arc<Mutex<Detector>>,
 }
 
 impl AppState {
-    pub fn new(core: Core, detector: Detector) -> Self {
+    pub fn new(
+        core: Core,
+        detector: Detector,
+        firewall: Box<dyn Firewall>,
+        publisher: Publisher,
+    ) -> Self {
         Self {
             core: Arc::new(core),
+            firewall: Arc::from(firewall),
+            publisher,
             detector: Arc::new(Mutex::new(detector)),
         }
     }
@@ -63,8 +73,9 @@ where
     match (req.method(), req.uri().path()) {
         (&Method::GET, "/health") => text(StatusCode::OK, "ok"),
         (&Method::POST, "/decide") => {
+            let peer = edge_net::http::peer(&req).map(|p| p.ip());
             let decision = match read_json::<ToolCall, _>(req, MAX_BODY_BYTES).await {
-                Ok(call) => decide(&state, &call),
+                Ok(call) => decide(&state, &call, peer).await,
                 Err(_) => Decision::deny("malformed tool call"),
             };
             json(StatusCode::OK, &decision)
@@ -86,6 +97,7 @@ where
             },
             Err(_) => text(StatusCode::BAD_REQUEST, "malformed pairing request"),
         },
+        (&Method::GET, "/identity") => json(StatusCode::OK, state.core.public()),
         (&Method::GET, "/status") => match state.core.status() {
             Ok(status) => json(StatusCode::OK, &status),
             Err(err) => core_error(&err),
@@ -102,7 +114,7 @@ where
     }
 }
 
-fn decide(state: &AppState, call: &ToolCall) -> Decision {
+async fn decide(state: &AppState, call: &ToolCall, peer: Option<std::net::IpAddr>) -> Decision {
     if !state.core.is_paired() {
         return Decision::deny("core not paired");
     }
@@ -110,12 +122,13 @@ fn decide(state: &AppState, call: &ToolCall) -> Decision {
         Ok(mut detector) => detector.decide(call),
         Err(_) => return Decision::deny("detector unavailable"),
     };
-    if let Err(err) = state.core.record_decision(call, &verdict) {
-        tracing::error!(%err, "could not record decision, denying");
-        return Decision::deny("record unavailable");
-    }
-    // Quarantine (ADR-0018) is triggered here when `verdict.contain` is set,
-    // once the integrations crate exists.
+    let meta = match state.core.record_decision(call, &verdict) {
+        Ok(meta) => meta,
+        Err(err) => {
+            tracing::error!(%err, "could not record decision, denying");
+            return Decision::deny("record unavailable");
+        }
+    };
     tracing::info!(
         session = %call.session,
         tool = %call.tool,
@@ -124,7 +137,69 @@ fn decide(state: &AppState, call: &ToolCall) -> Decision {
         contain = verdict.contain,
         "decided"
     );
+    // The host to contain is the TCP peer of this request (never a value the
+    // client declares), so a host cannot get another one quarantined.
+    let host = peer.map_or_else(|| "unknown".to_owned(), |ip| ip.to_string());
+    state.publisher.send(SinkEvent {
+        family: "decisions",
+        seq: meta.seq,
+        timestamp_ms: meta.timestamp_ms,
+        key: host.clone(),
+        body: serde_json::to_value(&meta).unwrap_or_default(),
+    });
+    if verdict.contain {
+        contain(state, peer, &meta).await;
+    }
     verdict.decision
+}
+
+/// Quarantines the host on the network firewall and records the outcome.
+/// A failed cut raises an alert event; the decision itself stays a denial.
+async fn contain(
+    state: &AppState,
+    peer: Option<std::net::IpAddr>,
+    trigger: &crate::core::EventMeta,
+) {
+    let reason = trigger
+        .reason
+        .clone()
+        .unwrap_or_else(|| "critical finding".into());
+    let (kind_note, ok) = match peer {
+        Some(ip) => match state.firewall.quarantine(ip, &reason).await {
+            Ok(()) => ("contained", true),
+            Err(err) => {
+                tracing::error!(%err, %ip, "containment failed");
+                ("containment_failed", false)
+            }
+        },
+        None => ("containment_failed", false),
+    };
+    let meta = crate::core::EventMeta {
+        kind: "containment",
+        host: peer.map(|p| p.to_string()),
+        severity: Some(guardian_core::Severity::Critical),
+        reason: Some(format!("{kind_note}: {reason}")),
+        ..crate::core::EventMeta::empty()
+    };
+    let content = serde_json::json!({
+        "firewall": state.firewall.name(),
+        "host": peer.map(|p| p.to_string()),
+        "ok": ok,
+        "trigger_seq": trigger.seq,
+    });
+    match state
+        .core
+        .record(guardian_core::EventKind::Contained, meta, &content, true)
+    {
+        Ok(meta) => state.publisher.send(SinkEvent {
+            family: "containment",
+            seq: meta.seq,
+            timestamp_ms: meta.timestamp_ms,
+            key: peer.map_or_else(|| "unknown".into(), |p| p.to_string()),
+            body: serde_json::to_value(&meta).unwrap_or_default(),
+        }),
+        Err(err) => tracing::error!(%err, "could not record containment"),
+    }
 }
 
 #[cfg(test)]
@@ -136,7 +211,12 @@ mod tests {
     const CALL: &str = r#"{"session":"s","tool":"bash","args":{"command":"ls"},"cwd":"/w"}"#;
 
     fn state(dir: &TempDir) -> AppState {
-        AppState::new(Core::open(&dir.0).unwrap(), Detector::new())
+        AppState::new(
+            Core::open(&dir.0).unwrap(),
+            Detector::new(),
+            Box::new(integrations::dry_run::DryRun::default()),
+            Publisher::none(),
+        )
     }
 
     async fn send(state: &AppState, req: Request<Full<Bytes>>) -> (StatusCode, Bytes) {
@@ -202,5 +282,86 @@ mod tests {
         assert_eq!(since(Some("a=1&since=3")), Some(3));
         assert_eq!(since(Some("since=x")), None);
         assert_eq!(since(None), None);
+    }
+
+    use detect::Rule;
+    use guardian_core::{Finding, Severity};
+    use integrations::{dry_run::DryRun, BoxFuture, FirewallError};
+
+    #[derive(Debug)]
+    struct Critical;
+
+    impl Rule for Critical {
+        fn check(&self, call: &ToolCall) -> Option<Finding> {
+            call.args["command"]
+                .as_str()?
+                .contains("EXFIL")
+                .then(|| Finding {
+                    rule: "test.critical".into(),
+                    severity: Severity::Critical,
+                    reason: "test".into(),
+                })
+        }
+    }
+
+    /// Shares one `DryRun` between the test and the state.
+    #[derive(Debug)]
+    struct Shared(Arc<DryRun>);
+
+    impl Firewall for Shared {
+        fn name(&self) -> &'static str {
+            "shared-dry-run"
+        }
+        fn quarantine<'a>(
+            &'a self,
+            host: std::net::IpAddr,
+            reason: &'a str,
+        ) -> BoxFuture<'a, Result<(), FirewallError>> {
+            self.0.quarantine(host, reason)
+        }
+        fn release(&self, host: std::net::IpAddr) -> BoxFuture<'_, Result<(), FirewallError>> {
+            self.0.release(host)
+        }
+    }
+
+    fn bash(command: &str) -> ToolCall {
+        ToolCall {
+            session: "s".into(),
+            tool: "bash".into(),
+            args: serde_json::json!({ "command": command }),
+            cwd: "/w".into(),
+            host: None,
+            call_id: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_critical_finding_denies_and_quarantines_the_peer() {
+        let dir = TempDir::new("api-contain");
+        let firewall = Arc::new(DryRun::default());
+        let s = AppState::new(
+            Core::open(&dir.0).unwrap(),
+            Detector::with_rules(vec![Box::new(Critical)]),
+            Box::new(Shared(Arc::clone(&firewall))),
+            Publisher::none(),
+        );
+        pair(&s.core);
+        let peer: std::net::IpAddr = "10.0.0.7".parse().unwrap();
+
+        assert!(decide(&s, &bash("ls"), Some(peer)).await.is_allow());
+        assert!(!firewall.is_quarantined(peer));
+
+        let decision = decide(&s, &bash("EXFIL"), Some(peer)).await;
+        assert!(!decision.is_allow());
+        assert!(firewall.is_quarantined(peer));
+
+        let kinds: Vec<_> = s
+            .core
+            .events_since(None)
+            .unwrap()
+            .into_iter()
+            .map(|e| e.kind)
+            .collect();
+        assert!(kinds.contains(&"containment"));
     }
 }

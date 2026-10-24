@@ -7,14 +7,68 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <header>
+    <div class="brand">HAWK <span class="muted">witness</span></div>
+    <div id="state" class="pill pill-unknown">connecting</div>
+    <form id="connect">
+      <input id="core-url" value="http://127.0.0.1:8080" spellcheck="false" aria-label="Core address">
+      <button type="submit">Connect</button>
+    </form>
+  </header>
+
   <main>
-    <h1>Witness</h1>
-    <p class="muted">Signed heads from the Guardian appear here.</p>
-    <section>
-      <h2>Latest head</h2>
-      <code id="head">-</code>
+    <section id="pairing" hidden>
+      <h2>Pair this Core</h2>
+      <p class="muted">The Core does nothing until it is paired with this app. After pairing, check that the same six digits appear in the Core's log.</p>
+      <button id="pair">Pair now</button>
+      <p id="pair-result"></p>
     </section>
-    <p class="muted" id="version"></p>
+
+    <section id="banner" class="banner" hidden></section>
+
+    <section class="tiles">
+      <div class="tile"><span class="label">Decided</span><span class="value" id="t-total">0</span></div>
+      <div class="tile ok"><span class="label">Allowed</span><span class="value" id="t-allow">0</span></div>
+      <div class="tile bad"><span class="label">Denied</span><span class="value" id="t-deny">0</span></div>
+      <div class="tile warn"><span class="label">Asked</span><span class="value" id="t-ask">0</span></div>
+      <div class="tile bad"><span class="label">Contained</span><span class="value" id="t-contained">0</span></div>
+      <div class="tile" id="tile-heads"><span class="label">Signed heads</span><span class="value" id="t-heads">0</span><span class="sub" id="t-heads-sub"></span></div>
+    </section>
+
+    <section class="panel">
+      <h2>Decisions per minute <span class="muted">last 30 min</span></h2>
+      <svg id="chart" viewBox="0 0 600 140" preserveAspectRatio="none" role="img" aria-label="Decisions per minute"></svg>
+      <div class="legend"><span class="dot ok"></span>allow <span class="dot bad"></span>deny <span class="dot warn"></span>ask</div>
+    </section>
+
+    <section class="panel">
+      <h2>Top rules</h2>
+      <ul id="rules" class="bars"></ul>
+    </section>
+
+    <section class="panel wide">
+      <h2>Events</h2>
+      <div class="filters">
+        <select id="f-decision" aria-label="Decision">
+          <option value="">all decisions</option>
+          <option>allow</option><option>deny</option><option>ask</option>
+        </select>
+        <select id="f-severity" aria-label="Severity">
+          <option value="">all severities</option>
+          <option>critical</option><option>high</option><option>medium</option><option>low</option>
+        </select>
+        <input id="f-text" placeholder="filter host, session, tool, rule" spellcheck="false">
+      </div>
+      <table>
+        <thead><tr><th>Time</th><th>#</th><th>Kind</th><th>Host</th><th>Tool</th><th>Decision</th><th>Severity</th><th>Rule</th></tr></thead>
+        <tbody id="events"></tbody>
+      </table>
+    </section>
+
+    <section class="panel wide">
+      <h2>Signed heads <span class="muted">checked against the key pinned at pairing</span></h2>
+      <ul id="heads" class="heads"></ul>
+    </section>
   </main>
   <script src="app.js"></script>
 </body>

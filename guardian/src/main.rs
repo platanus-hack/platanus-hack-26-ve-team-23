@@ -40,7 +40,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let listener = TcpListener::bind(addr).await?;
     tracing::info!(%addr, "guardian listening");
-    let state = api::AppState::new(core, detect::Detector::new());
+    let firewall = integrations::firewall_from_env();
+    tracing::info!(firewall = firewall.name(), "firewall adapter");
+    let publisher =
+        integrations::sinks::Publisher::start(integrations::sinks::sinks_from_env().await);
+    let state = api::AppState::new(core, detect::Detector::new(), firewall, publisher);
     edge_net::http::serve(listener, move |req| api::handle(state.clone(), req)).await;
     Ok(())
 }

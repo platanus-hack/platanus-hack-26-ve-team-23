@@ -23,19 +23,18 @@ use std::{
 
 use detect::Verdict;
 use guardian_core::{
+    pairing::{confirmation_code, pair_message},
     seal, CoreKeys, CorePublic, Decision, Event, EventKind, HashChain, Severity, SignedHead,
     ToolCall,
 };
 use p256::ecdsa::{signature::Verifier as _, Signature, VerifyingKey};
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest as _, Sha256};
 
 /// A head is signed after this many events, or after any high or critical one.
 const EVENTS_PER_HEAD: u64 = 10;
 /// Metadata kept in memory for the witness dashboard.
 const RECENT_EVENTS: usize = 1000;
-const PAIR_DOMAIN: &[u8] = b"guardian.pair.v1";
 
 #[derive(Debug)]
 pub enum CoreError {
@@ -237,18 +236,6 @@ fn load_heads(path: &Path) -> Result<Vec<SignedHead>, CoreError> {
         .collect()
 }
 
-/// Six digits both screens show during pairing, to catch a device in the
-/// middle on the local network.
-pub fn confirmation_code(core_ed25519: &[u8], owner_public: &[u8]) -> String {
-    let digest = Sha256::new()
-        .chain_update(b"guardian.confirm.v1")
-        .chain_update(core_ed25519)
-        .chain_update(owner_public)
-        .finalize();
-    let n = u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]]) % 1_000_000;
-    format!("{n:06}")
-}
-
 impl Core {
     pub fn open(dir: impl Into<PathBuf>) -> Result<Self, CoreError> {
         let dir = dir.into();
@@ -334,9 +321,7 @@ impl Core {
             .and_then(|der| Signature::from_der(&der).ok())
             .ok_or(CoreError::BadPairing("signature not DER"))?;
 
-        let mut message = PAIR_DOMAIN.to_vec();
-        message.extend_from_slice(nonce);
-        message.extend_from_slice(&self.public.ed25519);
+        let message = pair_message(nonce, &self.public.ed25519);
         owner_key
             .verify(&message, &signature)
             .map_err(|_| CoreError::BadPairing("signature does not verify"))?;
@@ -587,9 +572,10 @@ pub(crate) mod tests {
     pub fn pair(core: &Core) -> [u8; 32] {
         let owner = SigningKey::random(&mut OsRng);
         let offer = core.pair_offer().unwrap();
-        let mut message = PAIR_DOMAIN.to_vec();
-        message.extend_from_slice(&hex::decode(&offer.nonce).unwrap());
-        message.extend_from_slice(&offer.core_public.ed25519);
+        let message = pair_message(
+            &hex::decode(&offer.nonce).unwrap(),
+            &offer.core_public.ed25519,
+        );
         let signature: Signature = owner.sign(&message);
         let epoch_secret = random32();
         core.pair(&PairRequest {
@@ -693,13 +679,5 @@ pub(crate) mod tests {
             .unwrap()
             .contains("\"tool\":\"bash\""));
         assert!(seal::open(&[0u8; 32], &events[1].payload).is_err());
-    }
-
-    #[test]
-    fn confirmation_code_is_six_digits_and_key_dependent() {
-        let a = confirmation_code(b"core", b"owner-a");
-        let b = confirmation_code(b"core", b"owner-b");
-        assert_eq!(a.len(), 6);
-        assert_ne!(a, b);
     }
 }

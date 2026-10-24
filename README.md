@@ -11,10 +11,12 @@ Platanus Hack 26: Caracas. Track: AI Security (AI control). Team 23.
 
 <img src="./project-logo.png" alt="Project logo" width="200" />
 
-> Status: first vertical slice. OpenCode plugin -> host daemon -> Core
-> `/decide` works end to end and fails closed; the rule engine and the
-> policy of ADR-0022 are in place, concrete rules come with the evaluation
-> set. Decisions are in [`docs/adr`](docs/adr/README.md); the full flow is
+> Status: connected. OpenCode plugin -> host daemon -> Core `/decide` fails
+> closed; the Core pairs with the witness app, seals and chains every
+> decision, signs heads (Ed25519 + ML-DSA), contains hosts on the firewall
+> and publishes to Kafka or a webhook; the witness shows it all in a
+> dashboard and verifies the heads. Concrete detection rules, the heartbeat
+> and the LLM proxy are pending (see `PENDIENTES.md`). Decisions are in [`docs/adr`](docs/adr/README.md); the full flow is
 > in [`docs/ACTION-TREE.md`](docs/ACTION-TREE.md). Coding agents start with [AGENTS.md](AGENTS.md).
 
 ## The problem

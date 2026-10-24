@@ -11,7 +11,11 @@ mod commands;
 pub fn run() {
     let _ = tracing_subscriber::fmt().try_init();
     let result = tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![commands::app_info])
+        .invoke_handler(tauri::generate_handler![
+            commands::app_info,
+            commands::pair_core,
+            commands::dashboard
+        ])
         .run(tauri::generate_context!());
     if let Err(err) = result {
         tracing::error!(%err, "witness stopped with an error");

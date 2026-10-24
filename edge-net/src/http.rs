@@ -39,6 +39,34 @@ pub enum CallError {
     Body(BodyError),
 }
 
+/// GETs `url` and parses at most `max_response_bytes` of the JSON answer,
+/// bounded by `timeout`.
+pub async fn get_json<R: DeserializeOwned>(
+    client: &Client,
+    url: &str,
+    timeout: Duration,
+    max_response_bytes: usize,
+) -> Result<R, CallError> {
+    let request = Request::get(url)
+        .body(Full::new(Bytes::new()))
+        .map_err(|_| CallError::Request)?;
+    let call = async {
+        let response = client
+            .request(request)
+            .await
+            .map_err(|_| CallError::Unreachable)?;
+        if !response.status().is_success() {
+            return Err(CallError::Status(response.status().as_u16()));
+        }
+        read_json_body(response.into_body(), max_response_bytes)
+            .await
+            .map_err(CallError::Body)
+    };
+    tokio::time::timeout(timeout, call)
+        .await
+        .map_err(|_| CallError::Unreachable)?
+}
+
 /// POSTs `body` as JSON and parses at most `max_response_bytes` of the answer.
 /// The whole call, connection included, is bounded by `timeout`.
 pub async fn post_json<T, R>(

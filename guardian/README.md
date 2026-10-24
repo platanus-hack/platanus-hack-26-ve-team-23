@@ -14,9 +14,18 @@ The daemon on the Raspberry Pi. Wires `detect`, `llm-proxy` and
 | Endpoint | Purpose |
 |---|---|
 | `GET /health` | Liveness, returns `ok` |
+| `GET /identity` | The Core's public keys (Ed25519 and ML-DSA-65) |
+| `GET /pair`, `POST /pair` | Pairing offer and pairing (only while unpaired) |
+| `GET /status`, `/heads`, `/events` | State, signed heads and event metadata for the witness (`?since=N`) |
 | `POST /decide` | Body: `ToolCall` JSON. Answer: `{"decision":"allow"}`, `{"decision":"deny","reason":...}` or `{"decision":"ask","reason":...}` |
 
-Configuration: `GUARDIAN_ADDR` (default `0.0.0.0:8080`), `RUST_LOG`.
+Configuration: `GUARDIAN_ADDR` (default `0.0.0.0:8080`), `GUARDIAN_DATA_DIR`,
+`GUARDIAN_FIREWALL` (+ the router variables of `integrations`), `KAFKA_BROKERS`,
+`GUARDIAN_WEBHOOK_URL`, `RUST_LOG`.
+
+A critical finding quarantines the TCP peer of the request on the firewall
+(never a host the client declares), records a `containment` event and
+publishes to the sinks.
 
 ## What it must never do
 

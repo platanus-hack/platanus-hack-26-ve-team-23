@@ -18,6 +18,9 @@ path = "src/main.rs"
 
 [dependencies]
 guardian-core.workspace = true
+edge-net.workspace = true
+p256.workspace = true
+rand.workspace = true
 tauri = { version = "2", features = [] }
 serde.workspace = true
 serde_json.workspace = true
