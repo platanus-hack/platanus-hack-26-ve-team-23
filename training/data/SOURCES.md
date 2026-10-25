@@ -9,6 +9,7 @@ any other. Add a row only after checking the licence, and write the date.
 | `eval` | Tool calls from the evaluation set runs (ADR-0010), written by the team | This repository | 2026-10-24 |
 | `trace` | Tool calls recorded from our own agent runs in the lab, labelled by the team | This repository | 2026-10-24 |
 | `team` | Examples written and labelled by hand by the team | This repository | 2026-10-24 |
+| `tldr` | Command examples of [tldr-pages](https://github.com/tldr-pages/tldr) (`pages/common`, `linux`, `windows`; commit `25496208`), placeholders filled by `import_tldr.py`; labelled by our rules or `low`, sensitive ones left for the team. Attribution: © the tldr-pages team and contributors | CC-BY 4.0 (no share-alike; attribution kept here) | 2026-10-24 |
 
 Not listed, so not usable yet: model-generated labels (option 4 of the
 guide) until the labelling model's terms are checked, and any third-party

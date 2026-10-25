@@ -35,7 +35,8 @@ def main():
         print("train has fewer than two labels; run prepare.py with more data", file=sys.stderr)
         return 1
     vectorizer = HashingVectorizer(**VECTORIZER)
-    xs = {name: vectorizer.transform(x) for name, x in [("train", train_x), ("val", val_x), ("test", test_x)]}
+    # A split can be empty with few families; it is skipped, not transformed.
+    xs = {name: vectorizer.transform(x) if x else None for name, x in [("train", train_x), ("val", val_x), ("test", test_x)]}
 
     best = None
     for c in (0.1, 0.3, 1.0, 3.0, 10.0):

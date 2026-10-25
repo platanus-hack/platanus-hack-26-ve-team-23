@@ -32,6 +32,19 @@ def rows(split):
     return [row for _, row in common.load_jsonl(path)] if path.exists() else []
 
 
+def oversample(examples, share):
+    """Repeats the non-`low` examples until they are about `share` of the
+    training set. Real calls are almost all `low`; without this the model
+    learns to answer `low` to everything. Only training: val and test keep
+    the real proportions."""
+    risky = [e for e in examples if e["label"] != "low"]
+    low = len(examples) - len(risky)
+    if not risky or not low or share <= 0:
+        return examples
+    copies = max(1, round(share * low / ((1 - share) * len(risky))))
+    return examples + risky * (copies - 1)
+
+
 def as_dataset(examples):
     return Dataset.from_list([{"prompt": common.prompt(e), "completion": " " + e["label"]} for e in examples])
 
@@ -59,15 +72,21 @@ def main():
     parser.add_argument("--batch", type=int, default=config["batch_size"])
     parser.add_argument("--max-len", type=int, default=config["max_length"])
     parser.add_argument("--out", default=str(common.HERE / "out" / "lora"))
+    parser.add_argument("--final", action="store_true", help="train on every split (the model to ship); nothing held out")
     args = parser.parse_args()
     if args.model.startswith("CONFIRM"):
         print("set the Granite model id in training/config.json (or pass --model)", file=sys.stderr)
         return 1
 
     train, val, test = rows("train"), rows("val"), rows("test")
+    if args.final:
+        # The held-out runs measured generalisation; the shipped model learns
+        # from all of it. Its measurement is the separate stress test.
+        train, val, test = train + val + test, [], []
     if not train and not args.zero_shot:
         print("no training data; run prepare.py first", file=sys.stderr)
         return 1
+    train = oversample(train, config.get("risky_share", 0.0))
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -81,11 +100,14 @@ def main():
     if parameters >= config["max_parameters"]:
         print("1.5B parameters or more cannot run in the Core (ADR-0005)", file=sys.stderr)
         return 1
+    # Granite 4.0 350M is dense (no experts) but declares a router loss
+    # coefficient, which makes TRL add a load-balancing loss it cannot compute.
+    dense = not getattr(model.config, "num_local_experts", 0)
     if torch.cuda.is_available():
         model = model.to("cuda")
 
     if not args.zero_shot:
-        config = SFTConfig(
+        sft_config = SFTConfig(
             output_dir=str(out / "checkpoints"),
             num_train_epochs=args.epochs,
             learning_rate=args.lr,
@@ -104,6 +126,7 @@ def main():
             completion_only_loss=True,
             bf16=bf16,
             report_to=[],
+            router_aux_loss_coef=0.0 if dense else None,
         )
         # LoRA on every linear layer: small adapters, easy to version.
         settings = config["lora"]
@@ -116,7 +139,7 @@ def main():
         )
         trainer = SFTTrainer(
             model=model,
-            args=config,
+            args=sft_config,
             train_dataset=as_dataset(train),
             eval_dataset=as_dataset(val) if val else None,
             processing_class=tokenizer,

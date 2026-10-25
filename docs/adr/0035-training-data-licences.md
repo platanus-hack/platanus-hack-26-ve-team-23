@@ -90,3 +90,6 @@ Python, used only to train; nothing is shipped in the Core from these.
 ## History
 
 - v1.0 (2026-10-24): Initial proposal.
+- v1.1 (2026-10-24): First third-party source, tldr-pages (CC-BY 4.0, no
+  share-alike, attribution in `training/data/SOURCES.md`): its command
+  examples as everyday calls; labels are ours, never copied from the rules.

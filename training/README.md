@@ -23,6 +23,7 @@ pip install -r training/requirements.txt
 
 | # | Comando | Qué hace | Necesita GPU |
 |---|---|---|---|
+| 0 | `python training/import_tldr.py <clon de tldr-pages>` | Convierte los ejemplos de tldr-pages en llamadas `low` (`data/tldr.jsonl`); lo sensible o lo que dispara una regla va a `out/tldr-review.jsonl` para etiquetar a mano | No |
 | 1 | `python training/prepare.py` | Junta los ejemplos del catálogo y `training/data/*.jsonl`, los valida, quita duplicados y divide por familia (70/15/15) en `training/out/dataset/` | No |
 | 2 | `python training/baseline_linear.py` | Opción 1: hashing + regresión logística. La línea base contra la que se compara todo; exporta los pesos en `out/linear/model.json` | No |
 | 3 | `python training/train_lora.py --zero-shot` | Opción 2: Granite sin entrenar, para saber cuánto aporta un LLM | Recomendable |
@@ -57,6 +58,12 @@ Un ejemplo por línea en `training/data/<nombre>.jsonl`; el formato está en
   `prepare.py` rechaza cualquier otra.
 - La mayoría de los ejemplos reales son legítimos (`low`): hacen falta muchos,
   sacados de trazas del agente haciendo trabajo normal en el laboratorio.
+  `import_tldr.py` da ~9 400 de tldr-pages (`git clone --depth 1
+  https://github.com/tldr-pages/tldr`); las etiquetas de lo sensible las pone
+  el equipo, nunca se copian de las reglas (copiarían sus falsos positivos).
+- Lo que falta son ejemplos peligrosos: `train_lora.py` repite los que no son
+  `low` hasta ser `risky_share` del entrenamiento (`config.json`), pero
+  repetir 25 ejemplos no enseña familias nuevas.
 
 ## Después de entrenar
 
