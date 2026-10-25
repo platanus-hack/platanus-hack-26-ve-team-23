@@ -17,7 +17,7 @@ their data. The Android launcher icon is generated at release time from
   with the epoch key; pending `ask`s are answered with the owner's signature
   and alerts appear as a notice; Spanish and English; light and dark.
   Pending: Android Keystore, multicast lock and passkeys (see
-  `PENDIENTES.md`).
+  `docs/ROADMAP.md`).
 
 ## The five screens
 

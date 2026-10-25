@@ -114,7 +114,7 @@ None. Machine id and interfaces are read from files and system commands
 
 - The HWID is declared: an agent with root can change the machine id. It
   then looks like a new machine, which host enrolment (owner approval of
-  every new host, `PENDIENTES.md`) and attestation (ADR-0021, TPM-bound
+  every new host, ADR-0029) and attestation (ADR-0021, TPM-bound
   identity) close.
 - A root agent can change its MAC; MikroTik's mangle rule and OpenWrt's set
   then miss the new MAC, but sticky quarantine catches the reconnection.

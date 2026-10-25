@@ -27,4 +27,4 @@ Published on Render as the static site `hawk-landing`
 (ignored by git) and checks them against `SHA256SUMS` (ADR-0032).
 
 Open items (creating the Render service, the release the installer downloads, signing
-`SHA256SUMS`): `PENDIENTES.md`, section "Landing y app".
+`SHA256SUMS`): `docs/ROADMAP.md`, M13 and M14.

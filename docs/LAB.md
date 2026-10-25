@@ -1,6 +1,6 @@
 # Laboratorio: máquinas virtuales para probar la contención
 
-Guía práctica para el equipo (en español, como `EJECUCION-PENDIENTES.md`).
+Guía práctica para el equipo (en español).
 Monta en una PC con Windows 11 Pro (Hyper-V) los dos routers que soporta el
 Core, cada uno con una máquina vigilada detrás, para probar la cuarentena de
 punta a punta (ADR-0018, ADR-0020) sin hardware de red.

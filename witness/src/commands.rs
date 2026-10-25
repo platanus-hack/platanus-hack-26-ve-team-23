@@ -11,7 +11,7 @@
 //! Keys live in the app's data directory for the desktop build and the demo:
 //! `device.key` (Ed25519, transport identity), `owner.key` (P-256, owner
 //! signatures), `epoch.key` (X25519, opens the record). On Android they move
-//! into the Keystore (see PENDIENTES.md).
+//! into the Keystore (see docs/ROADMAP.md).
 
 use std::{
     fs,

@@ -23,7 +23,7 @@ Platanus Hack 26: Caracas. Track: AI Security (AI control). Team 23.
 > unfamiliar commands (opt-in, `HAWK_CLASSIFIER=1`, ADR-0036); the Granite
 > classifier is trained but not yet in the repository nor in the Core;
 > attestation and kernel sensors are pending: see
-> [`PENDIENTES.md`](PENDIENTES.md). Decisions: [`docs/adr`](docs/adr/README.md).
+> [`docs/ROADMAP.md`](docs/ROADMAP.md). Decisions: [`docs/adr`](docs/adr/README.md).
 > Flow: [`docs/ACTION-TREE.md`](docs/ACTION-TREE.md). Coding agents:
 > [`CLAUDE.md`](CLAUDE.md).
 
@@ -148,8 +148,7 @@ The agent under test is OpenCode with a 7B to 8B model served by Ollama
 | Router lab (Hyper-V VMs: MikroTik CHR, OpenWrt) | [docs/LAB.md](docs/LAB.md) |
 | Optional cloud: archive and configuration as code (OpenTofu, Render, LocalStack) | [infra/README.md](infra/README.md) |
 | Training the classifier (Granite) | [docs/ENTRENAMIENTO-GRANITE.md](docs/ENTRENAMIENTO-GRANITE.md) |
-| Milestones and state | [docs/ROADMAP.md](docs/ROADMAP.md) |
-| What is missing and why | [PENDIENTES.md](PENDIENTES.md) |
+| Milestones, state and what is missing | [docs/ROADMAP.md](docs/ROADMAP.md) |
 | Why it works this way | [docs/adr](docs/adr/README.md) |
 | Proposals under discussion | [docs/rfcs](docs/rfcs/README.md) |
 | How work is done | [docs/standards](docs/standards/README.md), [CONTRIBUTING.md](CONTRIBUTING.md) |

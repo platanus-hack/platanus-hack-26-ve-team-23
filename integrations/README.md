@@ -40,4 +40,4 @@ metadata is published, never the sealed record.
 
 `cargo test -p integrations`. The router adapters are tested for
 configuration and protocol handling; end-to-end tests need a router (see the
-lab in `PENDIENTES.md`).
+lab in `docs/LAB.md`).

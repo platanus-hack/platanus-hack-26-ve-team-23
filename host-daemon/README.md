@@ -12,7 +12,7 @@ user interface except the identification notice.
   OpenAI-compatible LLM proxy that forwards to Ollama and relays a copy of
   each exchange to the Core; the signed heartbeat answering the Core's
   challenge. Pending: TPM-sealed key and measured boot (see
-  `PENDIENTES.md`).
+  ADR-0021).
 
 ## The heartbeat (ADR-0021)
 

@@ -23,7 +23,7 @@ ignore = [
     # the Core, the daemon and eval. The fix is p256 0.14 (crypto-bigint 0.7),
     # an API migration across five crates that cannot be compiled and tested
     # before the demo. Signing happens on the owner's own device. Review:
-    # 2026-11-15 (PENDIENTES.md).
+    # 2026-11-15.
     { id = "RUSTSEC-2026-0387", reason = "p256 0.13 pins crypto-bigint 0.5; migrate to p256 0.14 by 2026-11-15" },
     # proc-macro-error is unmaintained, no safe upgrade. Held back by the GTK
     # bindings (glib-macros, gtk3-macros) that Tauri uses on Linux; it is a

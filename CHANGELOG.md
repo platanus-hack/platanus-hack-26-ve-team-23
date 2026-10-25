@@ -35,6 +35,14 @@ Every entry is written when the change is merged, under `Unreleased`.
 
 ### Changed
 
+- Published: `main` goes to the organisation repository
+  `platanus-hack/platanus-hack-26-ve-team-23` as a fast-forward of the
+  template, after scanning every new commit for secrets (none found).
+  `PENDIENTES.md` and `docs/EJECUCION-PENDIENTES.md` stay in the private
+  repository only: the public history is rewritten without them, and every
+  other document points to `docs/ROADMAP.md` or the ADRs instead. CLAUDE.md
+  names the `public` remote and when it may be pushed.
+
 - The OpenCode plugin says "Blocked by HAWK", not "Blocked by the Guardian".
 
 - Research references in the ADRs: ADR-0002 v1.1 (related work: Google's

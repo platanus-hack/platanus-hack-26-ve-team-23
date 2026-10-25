@@ -108,4 +108,4 @@ it saw those families in training, because `--final` holds nothing out. The
 honest measurement is the held-out run, and there the model still lets 100% of
 the unseen `critical` families through as `low`. This is the gap ADR-0036 is
 built around and that only more labelled attack data closes
-(`PENDIENTES.md`).
+(`docs/ROADMAP.md`, M10).

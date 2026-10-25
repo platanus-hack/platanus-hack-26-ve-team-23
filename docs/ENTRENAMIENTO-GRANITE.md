@@ -1,6 +1,6 @@
 # Entrenamiento del clasificador: complementar o afinar Granite
 
-Guía para el equipo (en español, como `LAB.md` y `EJECUCION-PENDIENTES.md`).
+Guía para el equipo (en español, como `LAB.md`).
 Recomienda cómo construir la etapa de clasificación del ADR-0005: qué
 entrenar, con qué datos, cómo medirlo y qué leer. Antes de entrenar con datos
 de terceros hace falta el ADR de licencias de datos (ver "Licencias").

@@ -2,11 +2,11 @@
 
 Full scope. Deadline assumed 2026-10-25 10:00 (to be confirmed). Patterns and
 code are taken from Nepheral where it already solved the problem (ADR-0014).
-What is missing and why: `PENDIENTES.md`.
+What is missing and why: the state column of each milestone below.
 
 | # | Milestone | ADRs | State |
 |---|---|---|---|
-| M0 | Decisions recorded | 0001 to 0036 | Written; all Proposed (0008 superseded by 0017), team approval pending |
+| M0 | Decisions recorded | 0001 to 0038 | Written; all Proposed (0008 superseded by 0017), team approval pending |
 | M1 | Workspace skeleton | 0012, 0013 | Done (clippy as errors, tests, `just`, `cargo deny`; Docker files untested) |
 | M2 | Agent under test | 0009 | Pending: OpenCode + Ollama on the 4070 |
 | M3 | Evaluation set | 0010 | Done: task format, 15+15 tasks, runner and metrics in `eval/`; scale to 30/30 |

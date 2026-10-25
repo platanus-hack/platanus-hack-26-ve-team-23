@@ -2,7 +2,7 @@
 //! digests of the tool calls it has relayed since the previous heartbeat.
 //! The key is the daemon's Ed25519 identity; on the demo it lives in
 //! `host.key` (software), to move into the TPM (or the Hyper-V vTPM) with
-//! measured boot later (see `PENDIENTES.md`).
+//! measured boot later (ADR-0021).
 
 use std::{path::PathBuf, sync::Mutex};
 

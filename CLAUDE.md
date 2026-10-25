@@ -48,9 +48,10 @@ other way round.
 4. **Discussion first when unsure:** larger proposals start as an RFC in
    `docs/rfcs/`.
 5. **Code, then docs, in the same change:** update the component README,
-   `CHANGELOG.md` (under Unreleased), `docs/ROADMAP.md` and `PENDIENTES.md`.
+   `CHANGELOG.md` (under Unreleased), `docs/ROADMAP.md` and, in the private
+   repository, `PENDIENTES.md`.
 
-Today every ADR is Proposed (0001 to 0036; 0008 superseded by 0017). The
+Today every ADR is Proposed (0001 to 0038; 0008 superseded by 0017). The
 team approves them.
 
 ## Hard rules
@@ -124,17 +125,24 @@ Keystore). Crates depend only downwards; `guardian-core` does no I/O.
 
 - Work happens on branches; Conventional Commits; English; no emojis.
 - The code lives in the **private** repository `JEHR037/team23-private`
-  (remote `origin`). **Never push to the public organisation repository**
-  until the team decides what to submit. Push only with the user's approval.
+  (remote `origin`). Since 2026-10-25 `main` is also published to the
+  organisation repository `platanus-hack/platanus-hack-26-ve-team-23`
+  (remote `public`): only `main`, never working branches or tags, only after
+  scanning the new commits for secrets, and only with the user's approval.
+  The public copy is `main` rewritten without `PENDIENTES.md` and
+  `docs/EJECUCION-PENDIENTES.md` (`git filter-branch --index-filter`, which
+  keeps every other commit's author, date and message, so later publishes
+  are fast-forwards).
 - Do not edit `platanus-hack-project.jsonc`, `project-description.md` or the
   logo unless asked: they are the hackathon submission.
 - No secrets in the repository: keys, mnemonics, router passwords, tokens.
 
 ## What is not built and why
 
-`PENDIENTES.md` lists every open item, who should do it, and why;
-`docs/EJECUCION-PENDIENTES.md` says how to execute each one, with acceptance
-criteria and ready-to-use prompts. Some
+`docs/ROADMAP.md` gives the state of each milestone. In the private
+repository only, `PENDIENTES.md` lists every open item, who should do it,
+and why, and `docs/EJECUCION-PENDIENTES.md` says how to execute each one;
+both are left out of the public repository, history included. Some
 items (the detection rule catalogue, the evaluation attacks, host heartbeats
 and attestation) were stopped by the model's safety filter while being
 written, so they are for the team to write by hand. Do not retry them in a

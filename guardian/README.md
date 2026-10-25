@@ -12,7 +12,7 @@ Raspberry Pi (2 GB, Linux, arm64); in Docker it is limited to 2 GB to match.
   answering `ask` decisions (ADR-0022), the data-driven rule catalogue
   (ADR-0005), host enrolment (ADR-0021) and the heartbeat with the dead man's
   switch (ADR-0021). Pending: TPM-sealed daemon key and measured boot
-  (hardware). See `PENDIENTES.md`.
+  (hardware). See `docs/ROADMAP.md`.
 
 ## Messages (`guardian_core::wire`)
 

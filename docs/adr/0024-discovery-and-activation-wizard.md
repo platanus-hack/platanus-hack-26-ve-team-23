@@ -67,7 +67,7 @@ accepted.
 - Discovery fails across VLANs; the daemon override and a manual address in
   a later version cover it.
 - A daemon without `GUARDIAN_CORE_ID` trusts the first active Core it finds
-  until host enrolment exists (`PENDIENTES.md`).
+  until host enrolment exists (ADR-0029).
 
 ## Implementation
 
