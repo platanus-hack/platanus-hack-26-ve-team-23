@@ -18,6 +18,13 @@ Every entry is written when the change is merged, under `Unreleased`.
   1.5B or more) with and without a LoRA fine-tune; `evaluate.py` reports
   false alarms and misses per split.
 
+- `training/import_tldr.py`: everyday commands from tldr-pages (CC-BY 4.0,
+  listed in `training/data/SOURCES.md`) as `low` examples, split by page;
+  calls the rules fire on or that touch anything sensitive go to a review
+  file for the team instead of being labelled. `train_lora.py` oversamples
+  the non-`low` examples of the training split (`risky_share` in
+  `config.json`).
+
 - ADR-0034 and Claude Code and Codex hooks: `hawk-host-daemon hook
   claude|codex` is their `PreToolUse` hook (normalises the call, asks the
   daemon, blocks on any failure), and `hooks install|uninstall|status` edits
@@ -43,6 +50,17 @@ Every entry is written when the change is merged, under `Unreleased`.
   before installing it: it runs inside OpenCode, and before it was copied
   unchecked. The downloads page groups the files (app, program for each
   computer, Core, plugin, verification) and says what each one is.
+- The downloads page shows one version at a time, chosen from a selector
+  (newest first, marked "última" or "preliminar"), instead of listing every
+  version down the page; files are cards per group with the SHA-256 folded
+  away. Plain HTML/CSS/JS, built into the page so it works offline.
+- Landing: the install step spells out what the one command sets up on each
+  machine (the daemon under its own user, the Claude Code and Codex hooks,
+  the OpenCode plugin) and how to manage the hooks by hand
+  (`host-daemon hooks install|status|uninstall`, `--no-hooks`, `--no-plugin`).
+- Landing: a "Para equipos y empresas" section covers the optional cloud for
+  teams (off-site archive, remote configuration as code, infrastructure as
+  code) and that the cloud account alone cannot change a Core (ADR-0027).
 - The Android APK is a release build for arm64, zipaligned and signed (with
   `ANDROID_KEYSTORE_B64` when set, a test key otherwise): about 700 MB as a
   debug build for four ABIs before. Version 0.1.3 is the first with it.
