@@ -1,8 +1,8 @@
 # HAWK: an AI control monitor the agent cannot reach
 
-**Design snapshot, before implementation.** This document describes the
-system as decided in ADR-0001 to ADR-0011. When the design changes, this
-document is updated and the decision is recorded in an ADR.
+**Design summary.** This document describes the system as decided in
+ADR-0001 to ADR-0036 (all Proposed). When the design changes, this document
+is updated and the decision is recorded in an ADR.
 
 ## 1. Scope of the claim
 
@@ -58,8 +58,10 @@ Pi. The phone receives heads and alerts (ADR-0003).
 
 1. Rules on the call and on the last N calls.
 2. A small classifier for what rules do not settle.
-3. Optionally a ~350M model for remaining ambiguous cases, if it fits and is
-   fast enough on the Pi.
+3. A small model (Granite 4 class, about 800M parameters) for remaining
+   ambiguous cases, if it fits and is fast enough on the Core's hardware
+   (ADR-0005). Until then, a familiarity stage distilled from the training
+   corpus can deny unfamiliar shell commands (opt-in, ADR-0036).
 
 Decisions: allow, deny, or ask the owner on the phone (ADR-0005).
 
