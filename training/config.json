@@ -1,0 +1,11 @@
+{
+  "model": "ibm-granite/granite-4.0-350m",
+  "max_parameters": 1500000000,
+  "epochs": 3,
+  "learning_rate": 0.0002,
+  "batch_size": 8,
+  "gradient_accumulation_steps": 2,
+  "max_length": 1024,
+  "risky_share": 0.2,
+  "lora": { "r": 16, "alpha": 32, "dropout": 0.05, "target_modules": "all-linear" }
+}

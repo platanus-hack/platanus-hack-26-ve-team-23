@@ -251,6 +251,10 @@ code { font-family: var(--mono); font-size: .86em; font-variant-ligatures: none;
 .guide p { margin: 0 0 16px; max-width: 46rem; color: var(--night-ink-2); }
 .guide .cmd { margin: 0 0 12px; min-width: 0; }
 .guide .small { margin: 0; }
+.guide .small + .small { margin-top: 8px; }
+.guide .parts { margin: 0 0 16px; padding-left: 1.15em; max-width: 46rem; color: var(--night-ink-2); }
+.guide .parts li + li { margin-top: 5px; }
+.guide .parts strong { color: var(--night-ink); font-weight: 650; }
 .downloads { margin: clamp(32px, 4vw, 48px) 0 0; color: var(--night-ink-2); }
 .downloads a { color: var(--night-ink); font-weight: 600; }
 
@@ -584,6 +588,21 @@ footer { padding: var(--gap-section) 0 40px; }
     </div>
   </section>
 
+  <section class="section" id="empresa" data-group data-pi-pose="soc" data-pi-side="left" data-pi-o=".18">
+    <div class="frame">
+      <div class="grid section-head">
+        <h2 class="d2" data-r>Para equipos y empresas.</h2>
+        <p class="lede" data-r>Opcional, y para cualquier dueño. Gestiona muchos HAWK como código, sin que la cuenta de la nube pueda, por sí sola, cambiar ninguno.</p>
+      </div>
+      <ul class="claims">
+        <li class="grid" data-r><h3 class="s3">Offline por defecto.</h3><p>Nada en la nube es obligatorio. Cada función se enciende por separado, lo mismo para un dueño personal que para una empresa; "empresa" solo nombra el uso típico, no una edición aparte.</p></li>
+        <li class="grid" data-r><h3 class="s3">Configuración como código.</h3><p>Un pipeline publica la próxima configuración firmada en tu bucket. Cada Core la aplica solo si es el siguiente eslabón de su cadena firmada; un rollback o una bifurcación se rechazan y levantan una alerta crítica.</p></li>
+        <li class="grid" data-r><h3 class="s3">La cuenta de la nube no manda.</h3><p>El firmante de empresa —una llave en tu KMS o gestor de secretos— puede publicar configuración, pero no puede nombrarse ni cambiarse a sí mismo. Solo el dueño, desde la app, decide quién firma.</p></li>
+        <li class="grid" data-r><h3 class="s3">Infraestructura como código.</h3><p>Plantillas para AWS, cualquier S3 con Object Lock o Render, para levantar el archivo y la configuración remota de muchos Cores de la misma forma en todos.</p></li>
+      </ul>
+    </div>
+  </section>
+
   <section class="install night" id="instalar" data-group data-pi-pose="top" data-pi-o="0">
     <div class="frame">
       <div class="grid section-head">
@@ -616,13 +635,19 @@ footer { padding: var(--gap-section) 0 40px; }
           <p>Instala la app desde <a href="downloads/">Descargas</a>. La app encuentra HAWK; compara la huella con la que mostró el Core al arrancar y empareja con el código de seis dígitos que ven los dos lados.</p>
         </li>
         <li data-r>
-          <h3>Instala el programa en cada computadora</h3>
-          <p>En Linux y macOS, un comando. Instala el programa que consulta a HAWK y el plugin de OpenCode. En Windows, descarga el <code>.zip</code> desde <a href="downloads/">Descargas</a> y corre <code>host-daemon.exe</code>.</p>
+          <h3>Instala el programa en cada computadora donde trabaja un agente</h3>
+          <p>En Linux y macOS, un comando. Deja tres cosas listas y conectadas a HAWK:</p>
+          <ul class="parts">
+            <li><strong>El daemon</strong>, que le pregunta a HAWK antes de cada acción. Corre como servicio y con su propio usuario, nunca el del agente.</li>
+            <li><strong>El hook de Claude Code y de Codex.</strong> HAWK los conecta solo cuando los encuentra en la máquina, para que consulten antes de cada herramienta. Un agente sin hook no pasa por HAWK.</li>
+            <li><strong>El plugin de OpenCode</strong>, que hace lo mismo dentro de OpenCode.</li>
+          </ul>
           <div class="cmd">
             <pre id="cmd-text"><span class="q">$</span> curl -fsSL https://hawkeeper.xyz/install.sh | sh</pre>
             <button class="copy" type="button">Copiar</button>
           </div>
-          <p class="small">Puedes leer el instalador antes de correrlo: <a href="install.sh">install.sh</a>. Comprueba cada descarga contra <code>SHA256SUMS</code>.</p>
+          <p class="small">Léelo antes de correrlo: <a href="install.sh">install.sh</a>; comprueba cada descarga contra <code>SHA256SUMS</code>. Para apuntar a un HAWK concreto, añade <code>-s -- --core IP:7443</code>. En Windows, descarga el <code>.zip</code> desde <a href="downloads/">Descargas</a> y corre <code>host-daemon.exe</code>.</p>
+          <p class="small">¿Prefieres conectar los hooks a mano, o ver qué quedó? <code>hawk-host-daemon hooks install claude</code> (o <code>codex</code>; en Windows, <code>host-daemon.exe</code>), <code>hooks status</code> para revisarlo y <code>hooks uninstall</code> para quitarlo; el instalador deja todo lo demás intacto. Para saltarte estos pasos: <code>--no-hooks</code> o <code>--no-plugin</code>.</p>
         </li>
         <li data-r>
           <h3>Aprueba cada computadora</h3>
@@ -663,6 +688,7 @@ footer { padding: var(--gap-section) 0 40px; }
         <div data-r><dt>¿Puede el agente borrar el registro?</dt><dd>No. El registro vive en la placa, encadenado y firmado. Si alguien cambia una sola decisión, tu teléfono lo detecta al verificar las firmas.</dd></div>
         <div data-r><dt>¿HAWK puede leer mi código?</dt><dd>HAWK ve las llamadas a herramientas que tiene que decidir. Lo que guarda en el registro queda sellado con una llave que solo tiene tu teléfono: la placa lo escribe, pero no lo puede leer.</dd></div>
         <div data-r><dt>¿Necesita internet?</dt><dd>No. Todo ocurre dentro de tu red. Archivar el registro en la nube es una opción, no un requisito.</dd></div>
+        <div data-r><dt>¿Sirve para una empresa con muchos equipos?</dt><dd>Sí. Las funciones de nube son opcionales y abiertas a cualquier dueño: archivar el registro fuera de la placa y gestionar la configuración de muchos HAWK como código, firmada y encadenada. La cuenta de la nube por sí sola no puede cambiar un Core; solo el dueño decide quién firma. Si la nube no responde, cada HAWK sigue funcionando.</dd></div>
       </dl>
     </div>
   </section>

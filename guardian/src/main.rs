@@ -177,9 +177,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
     };
 
+    // Rules always run. The familiarity stage (ADR-0036) is opt-in: it
+    // default-denies unfamiliar shell commands, so it stays off unless the
+    // owner turns it on (the demo Core and the installer set HAWK_CLASSIFIER).
+    let mut rules = detect::catalogue::builtin();
+    if std::env::var("HAWK_CLASSIFIER").is_ok_and(|v| v == "1" || v == "familiarity") {
+        tracing::info!("familiarity classifier stage enabled (ADR-0036)");
+        rules.push(Box::new(detect::Familiarity::builtin()));
+    }
     let state = api::AppState::new(
         core,
-        detect::Detector::with_rules(detect::catalogue::builtin()),
+        detect::Detector::with_rules(rules),
         firewall,
         publisher,
         announcer,

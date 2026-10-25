@@ -37,7 +37,8 @@ The Core has no HTTP endpoint (ADR-0023). `guardian probe ADDR` sends a QUIC
 hello from a throwaway identity and prints the answer.
 
 Configuration: `GUARDIAN_ADDR`, `GUARDIAN_DATA_DIR` (default
-`./guardian-data`), `GUARDIAN_FIREWALL` and the router variables of
+`./guardian-data`), `HAWK_CLASSIFIER=1` (adds the familiarity stage of
+ADR-0036 after the rules; off by default), `GUARDIAN_FIREWALL` and the router variables of
 `integrations` (used until the owner configures the Core from the app),
 `KAFKA_BROKERS`, `GUARDIAN_WEBHOOK_URL`, `RUST_LOG`, and the off-site
 archive (ADR-0026, optional): `ARCHIVE_ENDPOINT`, `ARCHIVE_REGION`,

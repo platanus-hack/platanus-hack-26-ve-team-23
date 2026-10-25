@@ -6,7 +6,7 @@ What is missing and why: `PENDIENTES.md`.
 
 | # | Milestone | ADRs | State |
 |---|---|---|---|
-| M0 | Decisions recorded | 0001 to 0034 (0035 on `entrenamiento`) | Written; all Proposed (0008 superseded by 0017), team approval pending |
+| M0 | Decisions recorded | 0001 to 0036 | Written; all Proposed (0008 superseded by 0017), team approval pending |
 | M1 | Workspace skeleton | 0012, 0013 | Done (clippy as errors, tests, `just`, `cargo deny`; Docker files untested) |
 | M2 | Agent under test | 0009 | Pending: OpenCode + Ollama on the 4070 |
 | M3 | Evaluation set | 0010 | Done: task format, 15+15 tasks, runner and metrics in `eval/`; scale to 30/30 |
@@ -21,7 +21,7 @@ What is missing and why: `PENDIENTES.md`.
 | M8 | Owner app (phone) | 0013, 0024, 0031 | Done: activation wizard, five screens (overview, machines, events, record, settings), Identify, Approve and Release, opening the sealed record, answering `ask` with alerts, Spanish and English, light and dark; reviewed in a browser against a mock shaped like the Rust structs; not yet run on a device; Android specifics pending |
 | M9 | Pairing | 0017 | Done with a P-256 owner key bound to the Core, nonce and app identity; passkeys pending |
 | M9b | Host identity and identify | 0015, 0021 | Done: fingerprint per host, identify notice, owner enrolment, heartbeat and dead man's switch; TPM key and boot quote pending (hardware) |
-| M10 | Classifier | 0005, 0035 | Granite model trained off the repository (pipeline on `entrenamiento`); not yet uploaded nor wired into the Core |
+| M10 | Classifier | 0005, 0035, 0036 | Pipeline in `training/`: dataset, linear baseline, Granite 4 ~800M with LoRA, ~9.4k legitimate calls from tldr-pages. The familiarity stage (ADR-0036) is in `detect`, distilled from that corpus and opt-in with `HAWK_CLASSIFIER=1`. Granite trained off the repository, not yet uploaded nor running in the Core; pending labelled dangerous calls and ADR-0035 approval |
 | M11 | Results and demo | 0010 | Pending: needs M2, a real `eval` run against the Core, the demo router and the Pi |
 | M12 | Repository clean-up | – | In progress: documentation synced with the code |
 | M13 | Landing page and app redesign | 0013, 0031 | Done: new `witness/ui`, landing published at hawkeeper.xyz with `install.sh`; the APK installs and runs on Android; from 0.1.6 it is called HAWK with the HAWK launcher icon |

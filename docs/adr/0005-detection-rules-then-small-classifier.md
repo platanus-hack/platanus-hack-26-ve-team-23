@@ -38,9 +38,9 @@ cache, which leaves no margin. Decisions add latency to every tool call.
    disabling the hook or editing the plugin directory).
 2. **A small classifier** on the normalised call and its recent context,
    for cases the rules do not settle.
-3. **Optionally, a ~350M model** (Granite 350M class, Apache-2.0, quantised)
-   for the remaining ambiguous cases, only if it fits in memory and its
-   latency is acceptable when measured on the Pi.
+3. **A small model** (Granite 4, about 800M parameters, Apache-2.0,
+   quantised) for the remaining ambiguous cases, if it fits in memory and its
+   latency is acceptable when measured on the Core's hardware.
 
 Models of 1.5B and above are out of the demo device.
 
@@ -55,7 +55,7 @@ Models of 1.5B and above are out of the demo device.
 
 | Dependency | Version | Licence |
 |---|---|---|
-| Granite ~350M (optional) | to be measured | Apache-2.0 |
+| Granite 4 ~800M (next step) | to be measured | Apache-2.0 |
 | Classifier library | to be chosen | must satisfy ADR-0011 |
 
 ## Consequences

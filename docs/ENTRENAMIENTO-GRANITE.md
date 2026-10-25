@@ -33,9 +33,10 @@ diseño de un clasificador de riesgo, pero sus tamaños no caben en la Pi.
 ## Modelo base
 
 - **IBM Granite**, licencia Apache-2.0 (permitida por el ADR-0011), en la
-  organización `ibm-granite` de Hugging Face. Usar la variante más chica de
-  la familia vigente (la clase de ~350M). Confirmar el nombre exacto del
-  modelo y su licencia en su tarjeta antes de bajarlo.
+  organización `ibm-granite` de Hugging Face. **Elegido: Granite 4 de unos
+  800M de parámetros** (equipo, 2026-10-24; ADR-0005 v1.2). Confirmar el
+  nombre exacto, el tamaño y la licencia en su tarjeta y escribirlo en
+  `training/config.json`. El pipeline está en [`training/`](../training/README.md).
 - Nada de 1.5B o más en la Pi (ADR-0005).
 
 ## Datos

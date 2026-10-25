@@ -1,0 +1,4 @@
+# Datasets built from data/, models, adapters and checkpoints.
+out/
+__pycache__/
+.venv/

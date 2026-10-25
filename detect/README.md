@@ -11,7 +11,12 @@ features, trained by `eval` (ADR-0014).
   and two medium ones (force push, recursive delete) so "ask" happens. The
   policy follows the owner's thresholds (`policy::apply_with`,
   `Detector::decide_with`, ADR-0033); a critical finding always denies and
-  quarantines, a high one at least asks. The classifier is not built yet.
+  quarantines, a high one at least asks. The classifier stage is a
+  familiarity check (`classifier.rs`, ADR-0036): a program allowlist
+  distilled from the training corpus (`model/familiarity.json`, built by
+  `training/export_familiarity.py`, embedded at compile time). It judges
+  shell commands only, by the first program of the line: an unfamiliar one
+  is `high`. It is opt-in on the Core (`HAWK_CLASSIFIER=1`).
 
 ## Rule format
 

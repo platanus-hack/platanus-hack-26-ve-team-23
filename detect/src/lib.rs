@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod catalogue;
+pub mod classifier;
 pub mod data;
 pub mod policy;
 pub mod rules;
@@ -15,6 +16,7 @@ pub mod workspace;
 use guardian_core::{wire::Thresholds, Decision, Finding, ToolCall};
 
 pub use catalogue::{builtin, builtin_data, load_dir};
+pub use classifier::Familiarity;
 pub use data::{DataRule, Field, RuleFile};
 pub use policy::Verdict;
 pub use rules::Rule;

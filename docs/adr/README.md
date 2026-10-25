@@ -68,6 +68,8 @@ supersedes it; the old one only has its status updated.
 | [0032](0032-ci-releases-and-public-downloads.md) | Continuous integration, releases and public downloads | Proposed |
 | [0033](0033-owner-attention-thresholds.md) | Attention thresholds the owner sets from the app | Proposed |
 | [0034](0034-every-agent-and-model-on-the-host.md) | Every agent and every model on the host, as far as each allows | Proposed |
+| [0035](0035-training-data-licences.md) | Which data may train the classifier | Proposed |
+| [0036](0036-familiarity-default-deny.md) | Familiarity default-deny for the classifier stage | Proposed |
 
 ## Open questions
 

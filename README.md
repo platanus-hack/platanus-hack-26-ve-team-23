@@ -19,8 +19,10 @@ Platanus Hack 26: Caracas. Track: AI Security (AI control). Team 23.
 > answering its heartbeat. The owner's phone app finds the Core on the
 > network, activates it with a wizard, approves hosts, sets the attention
 > thresholds, verifies the heads and can make any monitored machine identify
-> itself. The Granite classifier is trained but not yet in the repository nor
-> in the Core; attestation and kernel sensors are pending: see
+> itself. A familiarity stage distilled from the training corpus can deny
+> unfamiliar commands (opt-in, `HAWK_CLASSIFIER=1`, ADR-0036); the Granite
+> classifier is trained but not yet in the repository nor in the Core;
+> attestation and kernel sensors are pending: see
 > [`PENDIENTES.md`](PENDIENTES.md). Decisions: [`docs/adr`](docs/adr/README.md).
 > Flow: [`docs/ACTION-TREE.md`](docs/ACTION-TREE.md). Coding agents:
 > [`CLAUDE.md`](CLAUDE.md).
