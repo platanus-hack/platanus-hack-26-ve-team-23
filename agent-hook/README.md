@@ -9,9 +9,15 @@ TypeScript (ADR-0012), so this stays a thin shim with no logic.
 
 ## Install
 
-Copy `guardian.ts` to `.opencode/plugin/` in the project (or to
-`~/.config/opencode/plugin/`), start the host daemon, and set
-`HOST_DAEMON_URL` if it does not listen on `http://127.0.0.1:7070`.
+Copy `guardian.ts` to `.opencode/plugins/` in the project (or to
+`~/.config/opencode/plugins/`), start the host daemon, and set
+`HOST_DAEMON_URL` if it does not listen on `http://127.0.0.1:7070`. Keep one
+copy: OpenCode 1.19 loads both `plugin/` and `plugins/`, and two copies ask
+twice.
+
+The default export serves both plugin APIs: V1 calls `server()` and uses its
+hooks; V2 (OpenCode 1.19 and later, which refuses a module without a default
+`id` and `setup`) registers the same check with `ctx.tool.hook("execute.before")`.
 
 ## What it does
 

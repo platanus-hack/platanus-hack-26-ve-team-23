@@ -8,6 +8,13 @@ Every entry is written when the change is merged, under `Unreleased`.
 
 ## [Unreleased]
 
+### Fixed
+
+- The OpenCode plugin loads on OpenCode 1.19, which refused it ("Plugin must
+  export a default definition with an id and an effect or setup function"):
+  one default export now carries the V1 `server()` hooks and the V2 `id` and
+  `setup()`, which registers the same check on `execute.before`.
+
 ### Added
 
 - ADR-0021 v1.4: on Windows the daemon's `host.key` is sealed by the TPM
