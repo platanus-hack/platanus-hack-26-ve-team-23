@@ -11,7 +11,10 @@ user interface except the identification notice.
   Core it talks to, stored in `core.pin`); identification notice; the
   OpenAI-compatible LLM proxy that forwards to Ollama and relays a copy of
   each exchange to the Core; the signed heartbeat answering the Core's
-  challenge. Pending: TPM-sealed key and measured boot (see
+  challenge. On Windows `host.key` is sealed by the TPM through the
+  Platform Crypto Provider (`seal.rs`; `HAWK_TPM=0` turns it off); an
+  existing key is sealed in place with the same identity. Pending: signing
+  with a TPM-resident key, the measured-boot quote and Linux sealing (see
   ADR-0021).
 
 ## The heartbeat (ADR-0021)

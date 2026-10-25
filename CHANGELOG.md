@@ -10,6 +10,15 @@ Every entry is written when the change is merged, under `Unreleased`.
 
 ### Added
 
+- ADR-0021 v1.4: on Windows the daemon's `host.key` is sealed by the TPM
+  (`host-daemon/src/seal.rs`, from Nepheral's `tpm.rs`): an RSA key that
+  lives in the TPM wraps a data key that encrypts the identity with
+  XChaCha20-Poly1305, so a copied `host.key` opens on no other machine. An
+  existing plain key is sealed in place, keeping the identity the owner
+  approved; a sealed key that does not open stops the daemon instead of
+  making a new identity; `HAWK_TPM=0` turns sealing off. New dependency
+  `windows-sys` 0.59 (MIT OR Apache-2.0), Windows only. Version 0.1.7.
+
 - ADR-0038 and the Core side of a per-machine exemption: the owner can let one
   machine through for a bounded time (`CoreConfig.exemptions`, at most 24 h,
   naming the host's Ed25519 identity, never an address). It stops the

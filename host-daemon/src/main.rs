@@ -17,13 +17,15 @@
 //! It never decides: it returns the Core's answer, and denies when the Core
 //! cannot be found or reached, or the answer is unusable.
 
-#![forbid(unsafe_code)]
+// Denied everywhere; `seal.rs` allows it only for the Windows TPM FFI.
+#![deny(unsafe_code)]
 
 mod agents;
 mod heartbeat;
 mod machine;
 mod notice;
 mod pin;
+mod seal;
 mod tpm;
 
 use heartbeat::Heartbeat;
@@ -127,17 +129,59 @@ fn hex32(text: &str) -> Option<[u8; 32]> {
     hex::decode(text.trim()).ok()?.try_into().ok()
 }
 
-/// The daemon's Ed25519 identity, kept in the data directory (to be sealed by
-/// the TPM, ADR-0021).
+/// The daemon's Ed25519 identity, kept in the data directory and, where the
+/// machine has a TPM (Windows today), sealed by it (ADR-0021, `seal.rs`).
+///
+/// A sealed key that does not open is an error, never a reason to make a new
+/// identity: the owner approved this one. A plain key is sealed in place
+/// when a TPM answers, keeping the same identity, so nothing is re-approved.
 fn load_or_create_key(dir: &Path) -> std::io::Result<SigningKey> {
     fs::create_dir_all(dir)?;
     let path = dir.join("host.key");
-    if let Some(seed) = fs::read_to_string(&path).ok().as_deref().and_then(hex32) {
-        return Ok(SigningKey::from_bytes(&seed));
+    match fs::read(&path) {
+        Ok(bytes) if seal::is_sealed(&bytes) => {
+            let plain = seal::unseal(&bytes).map_err(std::io::Error::other)?;
+            let seed = std::str::from_utf8(&plain)
+                .ok()
+                .and_then(hex32)
+                .ok_or_else(|| {
+                    std::io::Error::other("host.key: the sealed content is not a key")
+                })?;
+            return Ok(SigningKey::from_bytes(&seed));
+        }
+        Ok(bytes) => {
+            if let Some(seed) = std::str::from_utf8(&bytes).ok().and_then(hex32) {
+                let key = SigningKey::from_bytes(&seed);
+                if seal::available() {
+                    store_key(&path, &key)?;
+                }
+                return Ok(key);
+            }
+        }
+        Err(err) if err.kind() != std::io::ErrorKind::NotFound => return Err(err),
+        Err(_) => {}
     }
     let key = SigningKey::generate(&mut OsRng);
-    write_private(&path, hex::encode(key.to_bytes()).as_bytes())?;
+    store_key(&path, &key)?;
     Ok(key)
+}
+
+/// Writes the key sealed when a TPM answers and the sealed copy opens again;
+/// otherwise as plain hex, as before. Sealing never costs the identity.
+fn store_key(path: &Path, key: &SigningKey) -> std::io::Result<()> {
+    let plain = hex::encode(key.to_bytes());
+    if seal::available() {
+        match seal::seal(plain.as_bytes()) {
+            Ok(sealed) if seal::unseal(&sealed).is_ok_and(|p| p == plain.as_bytes()) => {
+                write_private(path, &sealed)?;
+                tracing::info!("host.key sealed by this machine's TPM (ADR-0021)");
+                return Ok(());
+            }
+            Ok(_) => tracing::warn!("TPM: the sealed key did not open again; keeping it unsealed"),
+            Err(err) => tracing::warn!(%err, "TPM: sealing failed; keeping the key unsealed"),
+        }
+    }
+    write_private(path, plain.as_bytes())
 }
 
 impl Relay {

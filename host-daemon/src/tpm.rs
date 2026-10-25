@@ -4,10 +4,9 @@
 //!
 //! The demo reads the PCRs directly from the Linux TPM driver (a Hyper-V Gen2
 //! virtual machine with a vTPM). On Windows, and in the software fallback, no
-//! measurement is produced and the host runs without attestation. Sealing the
-//! daemon key *inside* the TPM (non-exportable) is the next step: it needs
-//! the Windows Platform Crypto Provider (Nepheral's `tpm.rs`) or `tss-esapi`
-//! on Linux, both out of scope for this build.
+//! measurement is produced and the host runs without attestation. On Windows
+//! the daemon key is sealed by the TPM (`seal.rs`); signing with a
+//! TPM-resident key and Linux sealing (`tss-esapi`) are the next step.
 
 use sha2::{Digest as _, Sha256};
 

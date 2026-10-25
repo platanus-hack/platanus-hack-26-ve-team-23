@@ -83,8 +83,18 @@ cut off.
 |---|---|---|
 | aya, aya-ebpf | latest | MIT OR Apache-2.0 |
 | tss-esapi (TPM 2.0 on Linux) | 7 | Apache-2.0 |
+| windows-sys (Windows only: NCrypt, Platform Crypto Provider) | 0.59 | MIT OR Apache-2.0 |
 
-Windows TPM access reuses the approach of Nepheral's `tpm.rs`.
+Windows TPM access reuses the approach of Nepheral's `tpm.rs` (the team's
+own code, brought in under this project's licence): `host-daemon/src/seal.rs`.
+An RSA key made inside the TPM, which never leaves it, wraps a random data
+key that encrypts `host.key` with XChaCha20-Poly1305. A copied `host.key`
+opens on no other machine. A plain key is sealed in place with the same
+identity (nothing is re-approved); a sealed key that does not open stops the
+daemon instead of making a new identity. `HAWK_TPM=0` turns sealing off.
+This is the only `unsafe` in the daemon (`#![deny(unsafe_code)]`, allowed in
+that module for the FFI). Still pending: signing with a TPM-resident key and
+the measured-boot quote, and sealing on Linux (`tss-esapi`).
 
 ## Consequences
 
@@ -114,6 +124,10 @@ Windows TPM access reuses the approach of Nepheral's `tpm.rs`.
 
 ## History
 
+- v1.4 (2026-10-25): On Windows the daemon's key is sealed by the TPM
+  through the Platform Crypto Provider (`seal.rs`, from Nepheral), migrating
+  existing keys in place; the TPM-resident signing key, the quote and Linux
+  sealing stay pending.
 - v1.3 (2026-10-25): The TPM key placed next to its precedents (Secure
   Enclave, Pluton) and linked to the limits listed in ADR-0003.
 - v1.2 (2026-10-24): the boot measurement is wired end to end: the daemon
