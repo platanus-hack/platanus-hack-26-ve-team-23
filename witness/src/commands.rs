@@ -30,8 +30,8 @@ use guardian_core::{
     seal, verify,
     wire::{
         answer_message, approve_message, configure_message, open_record_message, release_message,
-        CoreConfig, FirewallConfig, HostApproval, HostInfo, PendingAsk, RecordEvent, Request,
-        Response, Thresholds,
+        CoreConfig, Exemption, FirewallConfig, HostApproval, HostInfo, PendingAsk, RecordEvent,
+        Request, Response, Thresholds,
     },
     CorePublic, Event, EventKind, SignedHead,
 };
@@ -425,6 +425,9 @@ pub async fn configure_core(
     name: String,
     firewall: FirewallConfig,
     thresholds: Option<Thresholds>,
+    // The whole exemption list to publish (ADR-0038); left out, the active
+    // one is kept as it is.
+    exemptions: Option<Vec<Exemption>>,
 ) -> Result<String, String> {
     let dir = data_dir(&app)?;
     let conn = connect(&dir, &link).await?;
@@ -438,6 +441,15 @@ pub async fn configure_core(
     let thresholds = thresholds
         .or_else(|| active.as_ref().map(|c| c.thresholds))
         .unwrap_or_default();
+    // Exemptions the owner set earlier are kept: publishing a configuration
+    // for another reason must not silently un-exempt a machine, nor extend
+    // one (ADR-0038). `exemptions` replaces them when the caller passes it.
+    let exemptions = exemptions.unwrap_or_else(|| {
+        active
+            .as_ref()
+            .map(|c| c.exemptions.clone())
+            .unwrap_or_default()
+    });
     let config = CoreConfig {
         name: name.trim().chars().take(48).collect(),
         firewall,
@@ -445,6 +457,7 @@ pub async fn configure_core(
         prev: active.as_ref().map(|c| c.hash.clone()).unwrap_or_default(),
         enterprise_signer: active.and_then(|c| c.enterprise_signer),
         thresholds,
+        exemptions,
     };
     if config.name.is_empty() {
         return Err("give the Core a name".into());

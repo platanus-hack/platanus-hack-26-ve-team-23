@@ -33,6 +33,64 @@ pub struct CoreConfig {
     /// existed keep their hash and signature.
     #[serde(default, skip_serializing_if = "Thresholds::is_default")]
     pub thresholds: Thresholds,
+    /// Machines the owner has exempted from blocking, for a while (ADR-0038).
+    /// Left out of the JSON while empty, so configurations signed before they
+    /// existed keep their hash and signature.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exemptions: Vec<Exemption>,
+}
+
+/// The longest an exemption may last (ADR-0038): there is no open-ended one.
+pub const MAX_EXEMPTION_MS: u64 = 24 * 60 * 60 * 1000;
+
+/// One machine the owner has exempted from blocking, until a moment that must
+/// be set (ADR-0038). Detection and recording continue; only the outcome is
+/// forced to allow and containment is suppressed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Exemption {
+    /// Ed25519 identity of the host daemon, hex. The Core matches it against
+    /// the authenticated QUIC peer, never against an address or a name a
+    /// client declares (ADR-0023, ADR-0028).
+    pub host: String,
+    /// Unix milliseconds after which it stops applying.
+    pub until_ms: u64,
+    /// What the owner wrote down, shown in the app and kept in the record.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub reason: String,
+}
+
+impl CoreConfig {
+    /// The exemption in force for `host` (its identity in hex) at `now_ms`.
+    /// An expired one simply does not apply: nothing has to be undone.
+    pub fn exemption_for(&self, host: &str, now_ms: u64) -> Option<&Exemption> {
+        self.exemptions
+            .iter()
+            .find(|e| e.until_ms > now_ms && e.host.eq_ignore_ascii_case(host))
+    }
+
+    /// Why these exemptions cannot be accepted, if so. Checked when a
+    /// configuration is applied, against that moment.
+    pub fn exemptions_problem(&self, now_ms: u64) -> Option<String> {
+        for exemption in &self.exemptions {
+            if exemption.host.len() != 64 || !exemption.host.chars().all(|c| c.is_ascii_hexdigit())
+            {
+                return Some(format!(
+                    "exemption: {:?} is not a host identity (64 hex characters)",
+                    exemption.host
+                ));
+            }
+            if exemption.until_ms <= now_ms {
+                return Some("exemption: it must end in the future".into());
+            }
+            if exemption.until_ms - now_ms > MAX_EXEMPTION_MS {
+                return Some(format!(
+                    "exemption: it cannot last more than {} hours",
+                    MAX_EXEMPTION_MS / 3_600_000
+                ));
+            }
+        }
+        None
+    }
 }
 
 /// From which severity HAWK asks the owner and from which it denies
@@ -147,6 +205,11 @@ pub struct ConfigSummary {
     /// can keep it when it writes the next configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enterprise_signer: Option<String>,
+    /// Machines exempted from blocking (ADR-0038), so the app can show that a
+    /// machine is not protected right now and keep the exemptions when it
+    /// writes the next configuration. An exemption is never silent.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exemptions: Vec<Exemption>,
     /// The active attention thresholds (ADR-0033), so the app can show them
     /// and keep them when it writes the next configuration.
     #[serde(default)]
@@ -509,6 +572,87 @@ impl Response {
 mod tests {
     use super::*;
 
+    fn config_with(exemptions: Vec<Exemption>) -> CoreConfig {
+        CoreConfig {
+            name: "lab".into(),
+            firewall: FirewallConfig::DryRun,
+            version: 1,
+            prev: String::new(),
+            enterprise_signer: None,
+            thresholds: Thresholds::default(),
+            exemptions,
+        }
+    }
+
+    fn exemption(host: &str, until_ms: u64) -> Exemption {
+        Exemption {
+            host: host.into(),
+            until_ms,
+            reason: String::new(),
+        }
+    }
+
+    const HOST: &str = "aa";
+
+    fn host_id(byte: &str) -> String {
+        byte.repeat(32)
+    }
+
+    #[test]
+    fn an_exemption_applies_to_its_own_host_until_it_expires() {
+        let now = 1_000_000;
+        let config = config_with(vec![exemption(&host_id(HOST), now + 60_000)]);
+        assert!(config.exemption_for(&host_id(HOST), now).is_some());
+        // Case does not matter: the identity is hex either way.
+        assert!(config
+            .exemption_for(&host_id(HOST).to_uppercase(), now)
+            .is_some());
+        // Another machine is not covered by it.
+        assert!(config.exemption_for(&host_id("bb"), now).is_none());
+        // And it simply stops applying once it is past.
+        assert!(config.exemption_for(&host_id(HOST), now + 60_001).is_none());
+    }
+
+    #[test]
+    fn an_exemption_must_be_a_host_identity_that_ends_soon() {
+        let now = 1_000_000;
+        assert!(config_with(vec![exemption(&host_id(HOST), now + 60_000)])
+            .exemptions_problem(now)
+            .is_none());
+        // Not an identity.
+        assert!(config_with(vec![exemption("the-laptop", now + 60_000)])
+            .exemptions_problem(now)
+            .is_some());
+        assert!(config_with(vec![exemption(&"zz".repeat(32), now + 60_000)])
+            .exemptions_problem(now)
+            .is_some());
+        // Already over, so it would do nothing and is refused as a mistake.
+        assert!(config_with(vec![exemption(&host_id(HOST), now)])
+            .exemptions_problem(now)
+            .is_some());
+        // Longer than the ceiling: there is no open-ended exemption.
+        assert!(
+            config_with(vec![exemption(&host_id(HOST), now + MAX_EXEMPTION_MS + 1)])
+                .exemptions_problem(now)
+                .is_some()
+        );
+        assert!(
+            config_with(vec![exemption(&host_id(HOST), now + MAX_EXEMPTION_MS)])
+                .exemptions_problem(now)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn no_exemption_keeps_the_signed_bytes_of_older_configurations() {
+        // A configuration signed before exemptions existed must keep its hash
+        // and signature, so the field is left out of the JSON while empty.
+        let json = serde_json::to_string(&config_with(Vec::new())).unwrap();
+        assert!(!json.contains("exemptions"), "{json}");
+        let with = serde_json::to_string(&config_with(vec![exemption(&host_id(HOST), 9)])).unwrap();
+        assert!(with.contains("exemptions"), "{with}");
+    }
+
     #[test]
     fn requests_are_tagged() {
         let json = serde_json::to_string(&Request::Heads { since: Some(3) }).unwrap();
@@ -524,6 +668,7 @@ mod tests {
             prev: String::new(),
             enterprise_signer: None,
             thresholds: Thresholds::default(),
+            exemptions: Vec::new(),
         };
         let mut b = a.clone();
         assert_eq!(configure_message(&a), configure_message(&b));
@@ -540,6 +685,7 @@ mod tests {
             prev: String::new(),
             enterprise_signer: None,
             thresholds: Thresholds::default(),
+            exemptions: Vec::new(),
         };
         let json = serde_json::to_string(&config).unwrap();
         assert!(!json.contains("thresholds"));
@@ -596,6 +742,7 @@ mod tests {
             prev: String::new(),
             enterprise_signer: None,
             thresholds: Thresholds::default(),
+            exemptions: Vec::new(),
         };
         let mut second = first.clone();
         second.version = 2;

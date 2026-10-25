@@ -47,7 +47,7 @@ export const GuardianPlugin = async ({ directory }: PluginContext) => ({
     });
     if (answer.decision !== "allow") {
       const reason = "reason" in answer ? answer.reason : "denied";
-      throw new Error(`Blocked by the Guardian: ${reason}`);
+      throw new Error(`Blocked by HAWK: ${reason}`);
     }
   },
 });

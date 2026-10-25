@@ -322,6 +322,7 @@ pub fn summary(config: &CoreConfig) -> ConfigSummary {
         hash: hex::encode(config_hash(config)),
         enterprise: config.enterprise_signer.is_some(),
         enterprise_signer: config.enterprise_signer.clone(),
+        exemptions: config.exemptions.clone(),
         thresholds: config.thresholds,
     }
 }
@@ -487,6 +488,15 @@ impl Core {
                         "a remote configuration must not carry router secrets".into(),
                     ));
                 }
+                // Switching HAWK off for a machine is the owner's alone: a
+                // compromised cloud account must not be able to do it
+                // (ADR-0038).
+                let active = current.as_ref().map(|c| &c.exemptions);
+                if Some(&config.exemptions) != active && !config.exemptions.is_empty() {
+                    return Err(CoreError::BadConfig(
+                        "only the owner can exempt a machine".into(),
+                    ));
+                }
             }
         }
         if !config.thresholds.is_valid() {
@@ -494,6 +504,9 @@ impl Core {
                 "thresholds: a high finding must at least ask, and asking cannot start above denying"
                     .into(),
             ));
+        }
+        if let Some(problem) = config.exemptions_problem(now_ms()) {
+            return Err(CoreError::BadConfig(problem));
         }
         let expected_version = current.as_ref().map_or(1, |c| c.version + 1);
         if config.version != expected_version {
@@ -1166,7 +1179,66 @@ pub(crate) mod tests {
                 .unwrap_or_default(),
             enterprise_signer: current.and_then(|c| c.enterprise_signer.clone()),
             thresholds: current.map(|c| c.thresholds).unwrap_or_default(),
+            exemptions: current.map(|c| c.exemptions.clone()).unwrap_or_default(),
         }
+    }
+
+    #[test]
+    fn only_the_owner_can_exempt_a_machine() {
+        use guardian_core::wire::Exemption;
+        let dir = TempDir::new("config-exempt");
+        let core = Core::open(&dir.0).unwrap();
+        let (_, owner) = pair_with_owner(&core);
+        let host = "ab".repeat(32);
+        let exemption = |until_ms| {
+            vec![Exemption {
+                host: host.clone(),
+                until_ms,
+                reason: "migration".into(),
+            }]
+        };
+
+        // The owner authorises a pipeline, then exempts a machine.
+        let enterprise = SigningKey::random(&mut OsRng);
+        let enterprise_public = hex::encode(
+            enterprise
+                .verifying_key()
+                .to_encoded_point(false)
+                .as_bytes(),
+        );
+        let mut v1 = next(None, "lab");
+        v1.enterprise_signer = Some(enterprise_public);
+        core.apply_config(&v1, &signed(&v1, &owner), ConfigSource::Owner)
+            .unwrap();
+        let mut v2 = next(Some(&v1), "lab");
+        v2.exemptions = exemption(now_ms() + 60_000);
+        core.apply_config(&v2, &signed(&v2, &owner), ConfigSource::Owner)
+            .unwrap();
+        assert_eq!(core.config().unwrap().exemptions.len(), 1);
+
+        // The pipeline may publish configurations, but never touch the
+        // exemptions: it cannot switch HAWK off for a machine (ADR-0038).
+        let mut remote = next(Some(&v2), "lab");
+        remote.exemptions = exemption(now_ms() + 120_000);
+        let remote_signature = {
+            let signature: p256::ecdsa::Signature = p256::ecdsa::signature::Signer::sign(
+                &enterprise,
+                &guardian_core::wire::configure_message(&remote),
+            );
+            hex::encode(signature.to_der().as_bytes())
+        };
+        assert!(core
+            .apply_config(&remote, &remote_signature, ConfigSource::Enterprise)
+            .is_err());
+        // What the owner set is untouched.
+        assert_eq!(core.config().unwrap().version, v2.version);
+
+        // And the owner cannot leave one running for ever.
+        let mut forever = next(Some(&v2), "lab");
+        forever.exemptions = exemption(now_ms() + guardian_core::wire::MAX_EXEMPTION_MS + 60_000);
+        assert!(core
+            .apply_config(&forever, &signed(&forever, &owner), ConfigSource::Owner)
+            .is_err());
     }
 
     #[test]

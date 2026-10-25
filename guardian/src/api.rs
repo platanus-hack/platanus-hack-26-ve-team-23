@@ -27,7 +27,7 @@ use guardian_core::{
         answer_message, open_record_message, release_message, FirewallConfig, PendingAsk,
         ProxyRecord, RecordEvent, Request, Response,
     },
-    Decision, EventKind, Severity, ToolCall,
+    Decision, EventKind, Finding, Severity, ToolCall,
 };
 use integrations::{sinks::Publisher, Firewall, SinkEvent};
 use rand::RngCore;
@@ -551,6 +551,15 @@ pub async fn handle(state: AppState, peer: PeerId, addr: SocketAddr, req: Reques
                 status["thresholds"] =
                     serde_json::to_value(config.as_ref().map(|c| c.thresholds).unwrap_or_default())
                         .unwrap_or_default();
+                // Exemptions are never silent: the app shows which machine is
+                // not being protected right now (ADR-0038).
+                status["exemptions"] = serde_json::to_value(
+                    config
+                        .as_ref()
+                        .map(|c| c.exemptions.clone())
+                        .unwrap_or_default(),
+                )
+                .unwrap_or_default();
                 if let Some(config) = config {
                     status["name"] = config.name.into();
                 }
@@ -749,15 +758,48 @@ async fn decide(state: &AppState, call: &ToolCall, peer: PeerId, ip: IpAddr) -> 
     }
     // The owner's thresholds (ADR-0033); the ADR-0022 table until the owner
     // configures them.
-    let thresholds = state
-        .core
-        .config()
-        .map(|c| c.thresholds)
-        .unwrap_or_default();
-    let verdict = match state.detector.lock() {
+    let config = state.core.config();
+    let thresholds = config.as_ref().map(|c| c.thresholds).unwrap_or_default();
+    let mut verdict = match state.detector.lock() {
         Ok(mut detector) => detector.decide_with(call, &thresholds),
         Err(_) => return Decision::deny("detector unavailable"),
     };
+    // An exemption the owner set for this machine (ADR-0038). It stops the
+    // blocking, not the watching: the findings stay in the verdict, so the
+    // record shows what would have happened, and only the outcome is forced
+    // to allow. It is matched against the authenticated peer's identity,
+    // never against anything the client declared.
+    if let Some(exemption) = config
+        .as_ref()
+        .and_then(|c| c.exemption_for(&hex::encode(peer), crate::core::now_ms()))
+    {
+        if !verdict.decision.is_allow() {
+            tracing::warn!(
+                session = %call.session,
+                tool = %call.tool,
+                would_be = ?verdict.decision,
+                until_ms = exemption.until_ms,
+                "allowed by the owner's exemption; the machine is not protected"
+            );
+        }
+        verdict.findings.push(Finding {
+            rule: "hawk.exempt".into(),
+            severity: Severity::Low,
+            reason: if exemption.reason.is_empty() {
+                format!(
+                    "the owner exempted this machine until {}",
+                    exemption.until_ms
+                )
+            } else {
+                format!(
+                    "the owner exempted this machine until {}: {}",
+                    exemption.until_ms, exemption.reason
+                )
+            },
+        });
+        verdict.decision = Decision::Allow;
+        verdict.contain = false;
+    }
     let meta = match state.core.record_decision(call, &verdict) {
         Ok(meta) => meta,
         Err(err) => {
@@ -1261,6 +1303,7 @@ mod tests {
             prev: String::new(),
             enterprise_signer: None,
             thresholds: Default::default(),
+            exemptions: Vec::new(),
         };
         let bad = handle(
             s.clone(),
@@ -1333,6 +1376,56 @@ mod tests {
         assert!(!firewall.is_quarantined(peer));
         assert!(!decide_req(&s, bash("CRITICAL")).await.is_allow());
         assert!(firewall.is_quarantined(peer));
+    }
+
+    #[tokio::test]
+    async fn an_exempt_machine_is_allowed_but_still_recorded() {
+        use guardian_core::wire::{configure_message, Exemption};
+        let dir = TempDir::new("api-exempt");
+        let firewall = Arc::new(DryRun::default());
+        let s = raw_state_with(
+            &dir,
+            Detector::with_rules(vec![Box::new(Critical)]),
+            firewall.clone(),
+        );
+        let owner = pair_and_enroll(&s).await;
+
+        // The owner exempts this machine by its identity, for an hour.
+        let config = CoreConfig {
+            name: "lab".into(),
+            firewall: FirewallConfig::DryRun,
+            version: 1,
+            prev: String::new(),
+            enterprise_signer: None,
+            thresholds: Default::default(),
+            exemptions: vec![Exemption {
+                host: hex::encode(STRANGER),
+                until_ms: now_ms() + 3_600_000,
+                reason: "migration".into(),
+            }],
+        };
+        let signature: p256::ecdsa::Signature =
+            p256::ecdsa::signature::Signer::sign(&owner, &configure_message(&config));
+        s.core()
+            .apply_config(
+                &config,
+                &hex::encode(signature.to_der().as_bytes()),
+                crate::core::ConfigSource::Owner,
+            )
+            .unwrap();
+
+        // A critical call now runs, and the machine is not quarantined.
+        let before = s.core().events_since(None).unwrap().len();
+        assert!(decide_req(&s, bash("CRITICAL")).await.is_allow());
+        assert!(!firewall.is_quarantined(addr().ip()));
+
+        // But it is still watched: the call is recorded all the same. What the
+        // entry says (the finding that fired and the exemption that let it
+        // through) is sealed to the owner's epoch key (ADR-0007), so the app
+        // verifies the content, not the Core and not this test.
+        let events = s.core().events_since(None).unwrap();
+        assert!(events.len() > before, "the call must still be recorded");
+        assert!(kinds(&s).contains(&"decision"));
     }
 
     const OBSERVED: &str = "52:54:00:12:34:56";
@@ -1970,6 +2063,7 @@ mod tests {
                 ask_from: Severity::Low,
                 deny_from: Severity::Medium,
             },
+            exemptions: Vec::new(),
         };
         let signature: Signature = owner.sign(&guardian_core::wire::configure_message(&config));
         let resp = handle(

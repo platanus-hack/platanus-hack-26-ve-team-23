@@ -8,7 +8,34 @@ Every entry is written when the change is merged, under `Unreleased`.
 
 ## [Unreleased]
 
+### Added
+
+- ADR-0038 and the Core side of a per-machine exemption: the owner can let one
+  machine through for a bounded time (`CoreConfig.exemptions`, at most 24 h,
+  naming the host's Ed25519 identity, never an address). It stops the
+  blocking, not the watching: detection still runs and every call is still
+  recorded with the finding that fired and the exemption that let it through,
+  and the machine is not quarantined. Only the owner can set it, never the
+  enterprise signer, and the Core reports active exemptions in its status so
+  the app can show that a machine is unprotected. The app's own screen for it
+  is still to build (see the ADR: it needs a dedicated owner-signed request,
+  because the app never holds the full configuration).
+
+- ADR-0037: Granite runs inside the Core, through llama.cpp on quantised GGUF,
+  with the weights shipped as a verified release asset rather than in git
+  history, the model able to escalate a rule but never clear one, and a gate
+  so it only judges what rules and familiarity leave unfamiliar (0.1% of the
+  calls in the held-out split). Not built; its acceptance criteria are
+  measured on the board first.
+
+- `docs/BENCHMARKS.md` and `training/bench_latency.py`: what one decision
+  costs on each path, measured automatically. Rules 700 ns, rules plus
+  familiarity 900 ns, our Granite 100-200 ms unquantised, a model API
+  0.5-1.3 s for the network alone. 99.9% of calls never reach the model.
+
 ### Changed
+
+- The OpenCode plugin says "Blocked by HAWK", not "Blocked by the Guardian".
 
 - Research references in the ADRs: ADR-0002 v1.1 (related work: Google's
   approach for secure AI agents, CaMeL, DeepMind's AGI safety approach,
