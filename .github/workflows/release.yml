@@ -236,6 +236,10 @@ jobs:
         run: |
           export NDK_HOME="$ANDROID_NDK_LATEST_HOME"
           cargo tauri android init --ci
+          # The generated project carries Tauri's default launcher icon. With
+          # gen/android in place, `tauri icon` writes HAWK's into its res/.
+          cargo tauri icon icons/hawk-launcher.png
+          test -f gen/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
           cargo tauri android build --apk --target aarch64
       - name: Sign
         run: |

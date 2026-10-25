@@ -10,11 +10,23 @@ Every entry is written when the change is merged, under `Unreleased`.
 
 ### Fixed
 
+- The owner app is called HAWK on the launcher, the window and the
+  installers (it showed as "Witness"), and the APK's launcher icon is the
+  HAWK mark, generated at release time from `witness/icons/hawk-launcher.png`
+  (it had Tauri's default icon). The identifier stays `org.team23.witness`,
+  so installed apps keep their data. The hackathon logo is the HAWK mark and
+  wordmark. Version 0.1.6.
+
 - Claude Code's `PowerShell` tool on Windows (and `pwsh`, `cmd`) is judged as a
   command by the rules; before 0.1.5 it was recorded but no rule read it.
   The record keeps which shell it was. Version 0.1.5.
 
 ### Added
+
+- Hackathon submission filled in: `platanus-hack-project.jsonc` (name,
+  one-liner and description in Spanish, deploy URL `https://hawkeeper.xyz`)
+  and `project-description.md` for the voting page, including what is real
+  in the demo and what is not.
 
 - ADR-0034 and Claude Code and Codex hooks: `hawk-host-daemon hook
   claude|codex` is their `PreToolUse` hook (normalises the call, asks the

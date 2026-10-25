@@ -141,7 +141,12 @@ them) and the fonts are not sold on their own.
 - `witness/ui/i18n.js`, `kit.js`, `chart.js`: text, DOM helpers, the chart.
 - `witness/ui/preview.js`: browser preview data and scenarios.
 - `witness/tools/audit-i18n.js`: key audit (not shipped in the app).
-- `witness/icons/`: the HAWK mark on a dark rounded square.
+- `witness/icons/`: the HAWK mark on a dark rounded square for the desktop;
+  `hawk-launcher.png` (the mark on a full-bleed dark square) is the source
+  of the Android launcher icon, generated at release time.
+- The app's name, everywhere a user sees it (launcher, window, installer),
+  is **HAWK**. "witness" stays only as the crate name and the identifier
+  `org.team23.witness`, so installed apps keep their data and keys.
 
 ### Next steps
 
@@ -164,3 +169,6 @@ them) and the fonts are not sold on their own.
 - v1.0 (2026-10-24): Initial proposal.
 - v1.1 (2026-10-24): Font licence settled by ADR-0011 v1.2; the landing
   page lives in `misc/landing/`.
+- v1.2 (2026-10-24): The app is called HAWK to its users (it showed as
+  "Witness" with Tauri's default launcher icon); the Android launcher icon
+  comes from `witness/icons/hawk-launcher.png`.

@@ -240,7 +240,7 @@
         switch (cmd) {
           case "app_info":
             return {
-              version: "0.1.5",
+              version: "0.1.6",
               device_fingerprint: "9e4d-22b1-c8f0-5a17",
               core: paired ? { id: CORE_ID, fingerprint: fpOf(CORE_ID), name: coreName } : null,
             };

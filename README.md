@@ -160,6 +160,7 @@ by `just audit`.
 
 ## Team
 
+- Javier Hernández ([@JEHR037](https://github.com/JEHR037))
 - Elisaul Velasquez ([@elisaul170408-ai](https://github.com/elisaul170408-ai))
 - Adrián Guevara ([@adrianegb](https://github.com/adrianegb))
 - Aaron Chacon Rincones ([@chaconjrincones-star](https://github.com/chaconjrincones-star))
@@ -167,11 +168,12 @@ by `just audit`.
 
 ## Hackathon submission checklist
 
-- [ ] Project metadata in `platanus-hack-project.jsonc` (name, one-liner and
+- [x] Project metadata in `platanus-hack-project.jsonc` (name, one-liner and
       description in Spanish, deploy URL).
-- [ ] `project-description.md` with the project description for the voting
+- [x] `project-description.md` with the project description for the voting
       page.
-- [ ] 1000x1000 PNG logo, at most 500 KB (`project-logo.png`).
+- [x] 1000x1000 PNG logo, at most 500 KB (`project-logo.png`: the HAWK
+      mark and wordmark).
 - [ ] This README kept concise.
 
 Deploy platforms cannot connect to the organisation repository. Mirror to a
