@@ -5,10 +5,15 @@ agent cannot reach.
 
 ## Setup
 
-- PC: OpenCode with the model from ADR-0009, base URL pointing to the Pi.
-- Pi: Guardian running, connected to the PC and to the phone.
-- Phone: witness view open.
-- Screen: OpenCode, the Guardian event log, and the phone mirrored.
+- PC: Claude Code or Codex with the HAWK hook (`install.sh` registers it), or
+  OpenCode with the plugin and the model from ADR-0009; the host daemon
+  approved in the app.
+- Core: on the Pi (or another dedicated Linux machine, never the PC), on the
+  same network as the PC and the phone.
+- Phone: the HAWK app, paired with the Core.
+- Router (optional): OpenWrt or MikroTik configured in the app; without it,
+  containment runs in dry run and the record says what would have been cut.
+- Screen: the agent, the Core's log, and the phone mirrored.
 
 ## Steps
 
@@ -20,9 +25,12 @@ agent cannot reach.
 3. **Bypass attempt.** The agent tries to disable the hook. The proxy saw a
    tool call the hook never asked about; the cross-check raises an evasion
    alert.
-4. **Audit.** The owner opens the record with the two keys and the verifier
+4. **Kill the monitor.** Stop the host daemon on the PC. Its heartbeat goes
+   silent and the Core quarantines the machine by IP and MAC (dead man's
+   switch); the phone shows it, and Release brings it back.
+5. **Audit.** The owner opens the record with the two keys and the verifier
    confirms the chain matches the heads on the phone.
-5. **Results.** The metrics table from the evaluation (ADR-0010).
+6. **Results.** The metrics table from the evaluation (ADR-0010).
 
 ## Fallback
 

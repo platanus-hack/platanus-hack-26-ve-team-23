@@ -2,7 +2,11 @@
 
 The owner's app: it controls the Core from the phone. One Tauri 2 crate
 builds the Android APK and a desktop build used for development (ADR-0013).
-Its design, screens and UI contract are in ADR-0031.
+Its design, screens and UI contract are in ADR-0031. Users see it as
+**HAWK** (launcher, window, installers); `witness` is only the crate name and
+part of the identifier `org.team23.witness`, kept so installed apps keep
+their data. The Android launcher icon is generated at release time from
+`icons/hawk-launcher.png`.
 
 - **Status:** QUIC with mutual TLS to the Core with its own device identity
   (ADR-0023); activation wizard (find by mDNS, verify fingerprint, pair,

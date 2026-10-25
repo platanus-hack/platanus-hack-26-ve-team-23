@@ -8,6 +8,15 @@ Every entry is written when the change is merged, under `Unreleased`.
 
 ## [Unreleased]
 
+### Changed
+
+- Repository hygiene: `witness/gen/schemas/` is no longer tracked (tauri-build
+  regenerates it); README, CLAUDE.md, ROADMAP and PENDIENTES now describe the
+  12-rule catalogue, the Claude Code and Codex hooks, the proxy and `eval` as
+  built, ADRs up to 0035 and the trained (not yet integrated) classifier.
+  `docs/DEMO.md` uses the current setup (hooks, the HAWK app, optional
+  router) and adds the dead man's switch step.
+
 ### Fixed
 
 - The owner app is called HAWK on the launcher, the window and the

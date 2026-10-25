@@ -6,7 +6,7 @@ What is missing and why: `PENDIENTES.md`.
 
 | # | Milestone | ADRs | State |
 |---|---|---|---|
-| M0 | Decisions recorded | 0001 to 0030 | Written; all Proposed (0008 superseded by 0017), team approval pending |
+| M0 | Decisions recorded | 0001 to 0034 (0035 on `entrenamiento`) | Written; all Proposed (0008 superseded by 0017), team approval pending |
 | M1 | Workspace skeleton | 0012, 0013 | Done (clippy as errors, tests, `just`, `cargo deny`; Docker files untested) |
 | M2 | Agent under test | 0009 | Pending: OpenCode + Ollama on the 4070 |
 | M3 | Evaluation set | 0010 | Done: task format, 15+15 tasks, runner and metrics in `eval/`; scale to 30/30 |
@@ -21,12 +21,12 @@ What is missing and why: `PENDIENTES.md`.
 | M8 | Owner app (phone) | 0013, 0024, 0031 | Done: activation wizard, five screens (overview, machines, events, record, settings), Identify, Approve and Release, opening the sealed record, answering `ask` with alerts, Spanish and English, light and dark; reviewed in a browser against a mock shaped like the Rust structs; not yet run on a device; Android specifics pending |
 | M9 | Pairing | 0017 | Done with a P-256 owner key bound to the Core, nonce and app identity; passkeys pending |
 | M9b | Host identity and identify | 0015, 0021 | Done: fingerprint per host, identify notice, owner enrolment, heartbeat and dead man's switch; TPM key and boot quote pending (hardware) |
-| M10 | Classifier | 0005 | Pending |
+| M10 | Classifier | 0005, 0035 | Granite model trained off the repository (pipeline on `entrenamiento`); not yet uploaded nor wired into the Core |
 | M11 | Results and demo | 0010 | Pending: needs M2, a real `eval` run against the Core, the demo router and the Pi |
 | M12 | Repository clean-up | – | In progress: documentation synced with the code |
-| M13 | Landing page and app redesign | 0013, 0031 | Done in the browser preview: new `witness/ui`, HAWK icons, landing in `misc/landing`; pending the Tauri build on device, publishing the landing and a release for `install.sh` |
+| M13 | Landing page and app redesign | 0013, 0031 | Done: new `witness/ui`, landing published at hawkeeper.xyz with `install.sh`; the APK installs and runs on Android; from 0.1.6 it is called HAWK with the HAWK launcher icon |
 | M15 | Owner attention thresholds | 0033 | Built: thresholds in the signed configuration, set from the app; medium rules so "ask" fires |
-| M14 | CI, releases and downloads | 0032 | Built: CI and release workflows, downloads on the landing; pending the first CI run, the Render token and deploy hook, the first tag and the minisign key |
+| M14 | CI, releases and downloads | 0032 | Done: CI, releases up to 0.1.5 for Linux, macOS, Windows and Android, downloads on the landing through the Render deploy hook; pending the minisign key. Actions is stopped by the account's billing since 2026-10-25 |
 
 Critical path for the demo: M2, then M11 (router, Pi, `eval` metrics,
 recorded-session fallback). M10, passkeys, the TPM key, the S3 archive and

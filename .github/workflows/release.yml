@@ -239,7 +239,10 @@ jobs:
           # The generated project carries Tauri's default launcher icon. With
           # gen/android in place, `tauri icon` writes HAWK's into its res/.
           cargo tauri icon icons/hawk-launcher.png
-          test -f gen/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          res=gen/android/app/src/main/res
+          test -f "$res/mipmap-xxxhdpi/ic_launcher.png"
+          # The adaptive icon's background layer, white by default: HAWK's night.
+          sed -i 's/#FFFFFF/#141516/' "$res/values/ic_launcher_background.xml"
           cargo tauri android build --apk --target aarch64
       - name: Sign
         run: |

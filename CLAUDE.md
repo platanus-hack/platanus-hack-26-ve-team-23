@@ -50,8 +50,8 @@ other way round.
 5. **Code, then docs, in the same change:** update the component README,
    `CHANGELOG.md` (under Unreleased), `docs/ROADMAP.md` and `PENDIENTES.md`.
 
-Today every ADR is Proposed (0001 to 0030; 0008 superseded by 0017). The
-team approves them.
+Today every ADR is Proposed (0001 to 0034 on `main`, 0035 on the
+`entrenamiento` branch; 0008 superseded by 0017). The team approves them.
 
 ## Hard rules
 

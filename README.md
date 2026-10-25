@@ -11,13 +11,16 @@ Platanus Hack 26: Caracas. Track: AI Security (AI control). Team 23.
 
 <img src="./project-logo.png" alt="Project logo" width="200" />
 
-> **Status.** Working end to end: the OpenCode plugin asks the host daemon on
-> loopback; the daemon relays over QUIC with mutual TLS to the Core; the Core
-> decides, seals and chains every decision, signs heads (Ed25519 + ML-DSA-65)
-> and contains hosts on the firewall. The owner's phone app finds the Core on
-> the network, activates it with a wizard, shows the dashboard, verifies the
-> heads and can make any monitored machine identify itself. Detection rules,
-> host heartbeats and the LLM proxy are pending: see
+> **Status.** Working end to end: Claude Code and Codex (hooks) and OpenCode
+> (plugin) ask the host daemon before every tool; the daemon relays over QUIC
+> with mutual TLS to the Core; the Core decides with a 12-rule catalogue,
+> seals and chains every decision, signs heads (Ed25519 + ML-DSA-65) and
+> contains hosts on the firewall, including a host whose daemon stops
+> answering its heartbeat. The owner's phone app finds the Core on the
+> network, activates it with a wizard, approves hosts, sets the attention
+> thresholds, verifies the heads and can make any monitored machine identify
+> itself. The Granite classifier is trained but not yet in the repository nor
+> in the Core; attestation and kernel sensors are pending: see
 > [`PENDIENTES.md`](PENDIENTES.md). Decisions: [`docs/adr`](docs/adr/README.md).
 > Flow: [`docs/ACTION-TREE.md`](docs/ACTION-TREE.md). Coding agents:
 > [`CLAUDE.md`](CLAUDE.md).
@@ -58,7 +61,8 @@ nobody types addresses ([ADR-0024](docs/adr/0024-discovery-and-activation-wizard
 
 ## How a tool call flows
 
-1. Before running a tool, the OpenCode plugin asks the host daemon on
+1. Before running a tool, the agent asks the host daemon: Claude Code and
+   Codex through `hawk-host-daemon hook`, OpenCode through its plugin on
    loopback. If the daemon does not answer, the tool does not run.
 2. The daemon relays the call to the Core over QUIC, pinned to the Core's
    identity. If the Core cannot be reached, the daemon denies.
@@ -90,15 +94,15 @@ on established primitives ([ADR-0014](docs/adr/0014-own-implementation-establish
 | Layer | Crate | Runs on | Responsibility |
 |---|---|---|---|
 | Record and wire | [guardian-core](guardian-core/README.md) | everywhere | Events, hash chain, signed heads, sealing, wire messages. No I/O |
-| Detection | [detect](detect/README.md) | Core | Rule engine and policy (rule catalogue pending) |
+| Detection | [detect](detect/README.md) | Core | Rule engine, policy and a 12-rule catalogue (`detect/rules/default.json`) |
 | Networking | [edge-net](edge-net/README.md) | everywhere | QUIC with mutual TLS, mDNS discovery, loopback HTTP |
 | Integrations | [integrations](integrations/README.md) | Core | Firewalls (dry run, MikroTik, OpenWrt), Kafka and webhook |
 | Core | [guardian](guardian/README.md) | Raspberry Pi | Pairing, decisions, record, containment, hosts, identify |
-| Host daemon | [host-daemon](host-daemon/README.md) | Monitored machines | Hook relay over QUIC, Core pinning, identification notice |
-| Owner app | [witness](witness/README.md) | Phone (APK), desktop for dev | Activation wizard, dashboard, verification, identify |
+| Host daemon | [host-daemon](host-daemon/README.md) | Monitored machines | Hook relay over QUIC, Claude Code and Codex hooks, Core pinning, identification notice |
+| Owner app | [witness](witness/README.md) | Phone (APK), desktop for dev | Activation wizard, dashboard, approvals, thresholds, verification, identify |
 | Agent hook | [agent-hook](agent-hook/README.md) | Monitored machines | Thin TypeScript OpenCode plugin; fails closed |
-| LLM proxy | [llm-proxy](llm-proxy/README.md) | Host daemon | Planned |
-| Evaluation | [eval](eval/README.md) | PC + Core | Planned |
+| LLM proxy | [llm-proxy](llm-proxy/README.md) | Host daemon | Forwarding, SSE streaming and tool-call extraction for the cross-check |
+| Evaluation | [eval](eval/README.md) | PC + Core | Task set (15 legitimate, 15 harmful), runner and metrics |
 
 ## Build and run
 
