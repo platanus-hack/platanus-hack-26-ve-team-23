@@ -35,6 +35,11 @@ Every entry is written when the change is merged, under `Unreleased`.
 
 ### Changed
 
+- README in Spanish, like the other teams' and the submission: shorter, with
+  an installation summary and a link to hawkeeper.xyz; the template's
+  mirroring notes and the submission checklist are gone. The technical
+  documentation (ADRs, whitepaper) stays in English.
+
 - Published: `main` goes to the organisation repository
   `platanus-hack/platanus-hack-26-ve-team-23` as a fast-forward of the
   template, after scanning every new commit for secrets (none found).

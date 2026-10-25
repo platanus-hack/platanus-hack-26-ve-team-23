@@ -1,190 +1,190 @@
 # HAWK
 
-**Hardware Autonomous Watcher & Keeper** (tentative name).
+**Hardware Autonomous Watcher & Keeper** (nombre tentativo).
 
-An AI control monitor for coding agents that lives on separate hardware. It
-stops dangerous agent actions before they run, contains the machine at the
-network firewall when the agent tries to get around it, and keeps a record
-the agent cannot rewrite, verified by the owner's phone.
+Un monitor de control para agentes de programación que vive en un equipo
+aparte. Frena las acciones peligrosas del agente antes de que se ejecuten,
+aísla la máquina en el firewall de la red cuando el agente intenta saltárselo
+y guarda un registro que el agente no puede reescribir, verificado desde el
+teléfono del dueño.
 
-Platanus Hack 26: Caracas. Track: AI Security (AI control). Team 23.
+Platanus Hack 26: Caracas. Track: AI Security (AI control). Equipo 23.
 
-<img src="./project-logo.png" alt="Project logo" width="200" />
+<img src="./project-logo.png" alt="Logo de HAWK" width="200" />
 
-> **Status.** Working end to end: Claude Code and Codex (hooks) and OpenCode
-> (plugin) ask the host daemon before every tool; the daemon relays over QUIC
-> with mutual TLS to the Core; the Core decides with a 12-rule catalogue,
-> seals and chains every decision, signs heads (Ed25519 + ML-DSA-65) and
-> contains hosts on the firewall, including a host whose daemon stops
-> answering its heartbeat. The owner's phone app finds the Core on the
-> network, activates it with a wizard, approves hosts, sets the attention
-> thresholds, verifies the heads and can make any monitored machine identify
-> itself. A familiarity stage distilled from the training corpus can deny
-> unfamiliar commands (opt-in, `HAWK_CLASSIFIER=1`, ADR-0036); the Granite
-> classifier is trained but not yet in the repository nor in the Core;
-> attestation and kernel sensors are pending: see
-> [`docs/ROADMAP.md`](docs/ROADMAP.md). Decisions: [`docs/adr`](docs/adr/README.md).
-> Flow: [`docs/ACTION-TREE.md`](docs/ACTION-TREE.md). Coding agents:
-> [`CLAUDE.md`](CLAUDE.md).
+Sitio, guía de instalación y descargas: [hawkeeper.xyz](https://hawkeeper.xyz).
 
-## The problem
+> **Estado.** Funciona de punta a punta. Claude Code y Codex (con un hook) y
+> OpenCode (con un plugin) le preguntan al daemon de la máquina antes de cada
+> herramienta. El daemon reenvía la consulta por QUIC con TLS mutuo al Core,
+> que decide con un catálogo de 12 reglas, sella y encadena cada decisión,
+> firma las cabeceras (Ed25519 + ML-DSA-65) y aísla máquinas en el firewall,
+> también la que deja de responder a su latido. La app del dueño encuentra el
+> Core en la red, lo activa con un asistente, aprueba máquinas, fija los
+> umbrales de atención, verifica las firmas y puede hacer que cualquier
+> máquina vigilada se identifique. Una etapa de familiaridad, destilada del
+> corpus de entrenamiento, puede negar comandos desconocidos (opcional,
+> `HAWK_CLASSIFIER=1`, ADR-0036). El clasificador Granite está entrenado;
+> ADR-0037 decide cómo correrá dentro del Core y todavía no está construido.
+> Faltan la atestación con TPM y los sensores de kernel: ver
+> [`docs/ROADMAP.md`](docs/ROADMAP.md). Decisiones:
+> [`docs/adr`](docs/adr/README.md). Flujo completo:
+> [`docs/ACTION-TREE.md`](docs/ACTION-TREE.md).
 
-Provider guardrails act on what a model says. They do not see what an agent
-does with its tools (delete a log, send a secret over the network, disable
-its own monitor), and their logs live where neither the owner nor an auditor
-can check them independently. A monitor that runs on the same machine as the
-agent can be switched off by that agent.
+## El problema
 
-HAWK controls the agent, not the model
-([ADR-0002](docs/adr/0002-control-the-agent-not-the-model.md)): it covers the
-layer of actions and evidence that content guardrails do not.
+Los filtros de los proveedores revisan lo que el modelo dice. No ven lo que
+el agente hace con sus herramientas (borrar un registro, mandar un secreto por
+la red, apagar su propio monitor), y sus registros viven donde ni el dueño ni
+un auditor pueden comprobarlos por su cuenta. Un monitor que corre en la
+misma máquina que el agente puede ser apagado por ese agente.
 
-## The three edges
+HAWK controla al agente, no al modelo
+([ADR-0002](docs/adr/0002-control-the-agent-not-the-model.md)): cubre la capa
+de acciones y evidencia que los filtros de contenido no cubren. Separar quién
+ejecuta de quién decide es lo mismo que hacen el Secure Enclave de Apple, el
+TPM o los HSM de la banca
+([ADR-0003](docs/adr/0003-three-device-topology.md)).
+
+## Los tres equipos
 
 ```
- Monitored machine                    Core (Raspberry Pi)                 Owner's phone
- OpenCode --hook--> host daemon ==QUIC==> decide: rules + policy   <==QUIC== HAWK app
-            loopback   | identity        seal + chain + sign heads           activate (wizard)
-                       | pin             contain at the firewall             dashboard, verify heads
-            notice <---+---- identify -- hosts by fingerprint  <--identify-- find a machine
+ Máquina vigilada                   Core (Raspberry Pi)                   Teléfono del dueño
+ agente --hook--> daemon ==QUIC==> decide: reglas + política   <==QUIC== app HAWK
+          loopback   | identidad    sella, encadena y firma                activa (asistente)
+                     | fijada       aísla en el firewall                   panel, verifica firmas
+          aviso <----+--- identificar -- máquinas por huella  <-- identificar -- encuentra una máquina
 ```
 
-- **Core** (`guardian`): decides, records, contains. Inactive until the
-  owner's app pairs with it ([ADR-0017](docs/adr/0017-core-pairing-and-passkeys.md)).
-- **Host daemon** (`host-daemon`): runs on every monitored machine. Relays the
-  agent hook, has no UI except the identification notice.
-- **Owner app** (`witness`): the phone app that controls everything (APK; a
-  desktop build exists for development).
+- **Core** (`guardian`): decide, registra y aísla. No hace nada hasta que la
+  app del dueño lo empareja
+  ([ADR-0017](docs/adr/0017-core-pairing-and-passkeys.md)).
+- **Daemon** (`host-daemon`): corre en cada máquina vigilada. Reenvía el hook
+  del agente y no tiene interfaz, salvo el aviso de identificación.
+- **App del dueño** (`witness`): la app del teléfono que controla todo (APK;
+  hay una versión de escritorio para desarrollo).
 
-Every link between them is QUIC with mutual TLS 1.3, and each certificate's
-Ed25519 key is the identity ([ADR-0023](docs/adr/0023-quic-with-mutual-tls-between-edges.md)).
-The Core announces itself by mDNS and the app activates it with a wizard;
-nobody types addresses ([ADR-0024](docs/adr/0024-discovery-and-activation-wizard.md)).
+Cada enlace entre ellos es QUIC con TLS 1.3 mutuo, y la llave Ed25519 de cada
+certificado es la identidad
+([ADR-0023](docs/adr/0023-quic-with-mutual-tls-between-edges.md)). El Core se
+anuncia por mDNS y la app lo activa con un asistente: nadie escribe
+direcciones ([ADR-0024](docs/adr/0024-discovery-and-activation-wizard.md)).
 
-## How a tool call flows
+## Cómo fluye una llamada
 
-1. Before running a tool, the agent asks the host daemon: Claude Code and
-   Codex through `hawk-host-daemon hook`, OpenCode through its plugin on
-   loopback. If the daemon does not answer, the tool does not run.
-2. The daemon relays the call to the Core over QUIC, pinned to the Core's
-   identity. If the Core cannot be reached, the daemon denies.
-3. The Core evaluates the call: rules and, later, a small classifier; the
-   highest severity decides: allow, ask the owner, deny, or deny and contain
+1. Antes de usar una herramienta, el agente le pregunta al daemon: Claude Code
+   y Codex con `hawk-host-daemon hook`, OpenCode con su plugin por loopback.
+   Si el daemon no responde, la herramienta no se ejecuta.
+2. El daemon reenvía la llamada al Core por QUIC, fijado a la identidad del
+   Core. Si no llega al Core, niega.
+3. El Core evalúa la llamada con las reglas (y la etapa de clasificación si
+   está activa); la severidad más alta decide: permitir, preguntarle al dueño,
+   negar, o negar y aislar
    ([ADR-0022](docs/adr/0022-decision-policy-severities-and-defaults.md)).
-4. Every decision is sealed to the owner's weekly key, appended to a hash
-   chain and covered by heads signed with Ed25519 and ML-DSA-65
-   ([ADR-0019](docs/adr/0019-post-quantum-signatures-on-heads.md)). The Core
-   can write the record but cannot read it.
-5. On a critical finding the Core puts the machine in the quarantine list of
-   the network firewall (OpenWrt, MikroTik; Cisco next), so even a machine
-   with root access is cut off
+4. Cada decisión se sella con la llave semanal del dueño, se agrega a una
+   cadena de hashes y queda cubierta por cabeceras firmadas con Ed25519 y
+   ML-DSA-65 ([ADR-0019](docs/adr/0019-post-quantum-signatures-on-heads.md)).
+   El Core escribe el registro, pero no lo puede leer.
+5. Ante un hallazgo crítico, el Core pone la máquina en la lista de
+   cuarentena del firewall de la red (OpenWrt, MikroTik; Cisco después), así
+   que incluso una máquina con root queda cortada
    ([ADR-0018](docs/adr/0018-network-containment-through-the-firewall.md)).
-6. Event metadata goes to Kafka or a webhook
+6. Los metadatos de cada evento pueden ir a Kafka o a un webhook
    ([ADR-0020](docs/adr/0020-integrations-firewalls-and-event-sinks.md)).
 
-**Prevent, not just record.** A black box tells you why the plane crashed;
-HAWK stops the action before it runs. A record sealed on the infected
-machine only proves what the attacker let it seal; HAWK seals on a separate
-device.
+**Prevenir, no solo registrar.** Una caja negra te dice por qué se cayó el
+avión; HAWK frena la acción antes de que ocurra. Un registro sellado en la
+máquina infectada solo prueba lo que el atacante le dejó sellar; HAWK sella en
+otro equipo.
 
-## Components
+## Componentes
 
-Rust workspace ([ADR-0012](docs/adr/0012-rust-workspace-and-crate-boundaries.md)),
-Tauri 2 app ([ADR-0013](docs/adr/0013-tauri-front-end.md)), our own monitor
-on established primitives ([ADR-0014](docs/adr/0014-own-implementation-established-primitives.md)).
+Workspace de Rust ([ADR-0012](docs/adr/0012-rust-workspace-and-crate-boundaries.md)),
+app en Tauri 2 ([ADR-0013](docs/adr/0013-tauri-front-end.md)), monitor propio
+sobre primitivas establecidas
+([ADR-0014](docs/adr/0014-own-implementation-established-primitives.md)).
 
-| Layer | Crate | Runs on | Responsibility |
+| Capa | Crate | Corre en | Responsabilidad |
 |---|---|---|---|
-| Record and wire | [guardian-core](guardian-core/README.md) | everywhere | Events, hash chain, signed heads, sealing, wire messages. No I/O |
-| Detection | [detect](detect/README.md) | Core | Rule engine, policy and a 12-rule catalogue (`detect/rules/default.json`) |
-| Networking | [edge-net](edge-net/README.md) | everywhere | QUIC with mutual TLS, mDNS discovery, loopback HTTP |
-| Integrations | [integrations](integrations/README.md) | Core | Firewalls (dry run, MikroTik, OpenWrt), Kafka and webhook |
-| Core | [guardian](guardian/README.md) | Raspberry Pi | Pairing, decisions, record, containment, hosts, identify |
-| Host daemon | [host-daemon](host-daemon/README.md) | Monitored machines | Hook relay over QUIC, Claude Code and Codex hooks, Core pinning, identification notice |
-| Owner app | [witness](witness/README.md) | Phone (APK), desktop for dev | Activation wizard, dashboard, approvals, thresholds, verification, identify |
-| Agent hook | [agent-hook](agent-hook/README.md) | Monitored machines | Thin TypeScript OpenCode plugin; fails closed |
-| LLM proxy | [llm-proxy](llm-proxy/README.md) | Host daemon | Forwarding, SSE streaming and tool-call extraction for the cross-check |
-| Evaluation | [eval](eval/README.md) | PC + Core | Task set (15 legitimate, 15 harmful), runner and metrics |
+| Registro y protocolo | [guardian-core](guardian-core/README.md) | todos | Eventos, cadena de hashes, cabeceras firmadas, sellado, mensajes. Sin E/S |
+| Detección | [detect](detect/README.md) | Core | Motor de reglas, política, catálogo de 12 reglas (`detect/rules/default.json`) y etapa de familiaridad |
+| Red | [edge-net](edge-net/README.md) | todos | QUIC con TLS mutuo, descubrimiento mDNS, HTTP por loopback |
+| Integraciones | [integrations](integrations/README.md) | Core | Firewalls (modo prueba, MikroTik, OpenWrt), Kafka y webhook |
+| Core | [guardian](guardian/README.md) | Raspberry Pi | Emparejamiento, decisiones, registro, aislamiento, máquinas, identificación |
+| Daemon | [host-daemon](host-daemon/README.md) | máquinas vigiladas | Reenvío por QUIC, hooks de Claude Code y Codex, Core fijado, aviso de identificación |
+| App del dueño | [witness](witness/README.md) | teléfono (APK), escritorio | Activación, panel, aprobaciones, umbrales, verificación, identificación |
+| Hook del agente | [agent-hook](agent-hook/README.md) | máquinas vigiladas | Plugin mínimo de OpenCode en TypeScript; falla cerrado |
+| Proxy LLM | [llm-proxy](llm-proxy/README.md) | daemon | Reenvío, streaming SSE y extracción de llamadas para el cruce con el hook |
+| Evaluación | [eval](eval/README.md) | PC + Core | Set de tareas (15 legítimas, 15 dañinas), ejecutor y métricas |
+| Entrenamiento | [training](training/README.md) | PC con GPU | Dataset, línea base y Granite 4 con LoRA (ADR-0035) |
 
-## Build and run
+## Instalación
+
+La guía completa está en [hawkeeper.xyz](https://hawkeeper.xyz). En resumen:
+
+1. El Core en una Raspberry Pi 4, o en otro equipo dedicado con Linux de 64
+   bits que no sea una de las máquinas vigiladas.
+2. La app en el teléfono (APK) o en el escritorio; empareja el Core
+   comparando su huella y un código de seis dígitos.
+3. En cada máquina con Linux o macOS:
+   `curl -fsSL https://hawkeeper.xyz/install.sh | sh` (en Windows, el `.zip`
+   de las descargas).
+4. Aprueba cada máquina en la app, comparando su huella.
+
+## Compilar y correr
 
 ```sh
-just check                  # fmt, clippy (warnings are errors) and tests
-just guardian               # the Core: QUIC on 0.0.0.0:7443, announced by mDNS
-just probe 127.0.0.1:7443   # QUIC hello against a Core
-just daemon                 # a host daemon (GUARDIAN_CORE=ip:7443 to skip discovery)
-just witness                # the owner app on the desktop
-just witness-apk            # the owner app as an APK (Android SDK and NDK)
+just check                  # fmt, clippy (los avisos son errores) y tests
+just guardian               # el Core: QUIC en 0.0.0.0:7443, anunciado por mDNS
+just probe 127.0.0.1:7443   # saludo QUIC contra un Core
+just daemon                 # un daemon (GUARDIAN_CORE=ip:7443 para no buscar por mDNS)
+just witness                # la app del dueño en el escritorio
+just witness-apk            # la app como APK (Android SDK y NDK)
 ```
 
-To review the app's design without a Core, open `witness/ui/index.html` in a
-browser (add `?wizard` to see the activation).
+Para revisar el diseño de la app sin un Core, abre `witness/ui/index.html` en
+un navegador (agrega `?wizard` para ver la activación).
 
-With Docker (not yet tested on this machine):
+## Qué no es HAWK
 
-```sh
-docker compose run --rm check   # fmt, clippy and tests in a container
-just docker-smoke               # the Core limited to 2 GB, then a QUIC hello
-```
+- No es un filtro de jailbreaks ni de contenido: no hace más seguro al modelo.
+- No es una blockchain: la integridad viene de una cadena de hashes local y un
+  testigo independiente
+  ([ADR-0006](docs/adr/0006-local-hash-chain-no-blockchain.md)).
+- No protege contra un agente con root en la PC; lo registrado hasta ese
+  momento sobrevive fuera de ella.
 
-The agent under test is OpenCode with a 7B to 8B model served by Ollama
-([ADR-0009](docs/adr/0009-agent-under-test-opencode-ollama.md)).
+## Documentación
 
-## What HAWK is not
+La documentación técnica (ADRs, whitepaper) está en inglés.
 
-- Not a jailbreak or content guardrail; it does not make the model safer.
-- Not a blockchain; integrity comes from a local hash chain and an
-  independent witness ([ADR-0006](docs/adr/0006-local-hash-chain-no-blockchain.md)).
-- Not protection against an agent with root on the PC; what was recorded
-  before that point survives off the PC.
-
-## Documentation
-
-| What | Where |
+| Qué | Dónde |
 |---|---|
-| Instructions for coding agents | [CLAUDE.md](CLAUDE.md) |
-| Design and threat model | [docs/WHITEPAPER.md](docs/WHITEPAPER.md) |
-| Demo script | [docs/DEMO.md](docs/DEMO.md) |
-| Router lab (Hyper-V VMs: MikroTik CHR, OpenWrt) | [docs/LAB.md](docs/LAB.md) |
-| Optional cloud: archive and configuration as code (OpenTofu, Render, LocalStack) | [infra/README.md](infra/README.md) |
-| Training the classifier (Granite) | [docs/ENTRENAMIENTO-GRANITE.md](docs/ENTRENAMIENTO-GRANITE.md) |
-| Milestones, state and what is missing | [docs/ROADMAP.md](docs/ROADMAP.md) |
-| Why it works this way | [docs/adr](docs/adr/README.md) |
-| Proposals under discussion | [docs/rfcs](docs/rfcs/README.md) |
-| How work is done | [docs/standards](docs/standards/README.md), [CONTRIBUTING.md](CONTRIBUTING.md) |
-| Reporting a vulnerability | [SECURITY.md](SECURITY.md) |
-| What changed | [CHANGELOG.md](CHANGELOG.md) |
+| Diseño y modelo de amenazas | [docs/WHITEPAPER.md](docs/WHITEPAPER.md) |
+| Por qué funciona así (decisiones) | [docs/adr](docs/adr/README.md) |
+| Hitos, estado y lo que falta | [docs/ROADMAP.md](docs/ROADMAP.md) |
+| Guion de la demo | [docs/DEMO.md](docs/DEMO.md) |
+| Laboratorio de routers (VMs de MikroTik CHR y OpenWrt) | [docs/LAB.md](docs/LAB.md) |
+| Entrenamiento del clasificador (Granite) | [docs/ENTRENAMIENTO-GRANITE.md](docs/ENTRENAMIENTO-GRANITE.md) |
+| Costo de cada decisión | [docs/BENCHMARKS.md](docs/BENCHMARKS.md) |
+| Nube opcional: archivo y configuración como código | [infra/README.md](infra/README.md) |
+| Instrucciones para agentes de programación | [CLAUDE.md](CLAUDE.md) |
+| Cómo se trabaja | [docs/standards](docs/standards/README.md), [CONTRIBUTING.md](CONTRIBUTING.md) |
+| Reportar una vulnerabilidad | [SECURITY.md](SECURITY.md) |
+| Qué cambió | [CHANGELOG.md](CHANGELOG.md) |
 
-## Licence
+## Licencia
 
-Not chosen yet. Until it is, no licence is granted. Whatever it becomes,
-every dependency must use a licence from the allow list in
-[ADR-0011](docs/adr/0011-dependency-licences.md) (MIT, Apache-2.0, BSD,
-ISC and similar; no GPL, LGPL or AGPL, no non-commercial licences), checked
-by `just audit`.
+Todavía no está elegida; hasta entonces no se otorga ninguna. Sea cual sea,
+cada dependencia debe usar una licencia de la lista de
+[ADR-0011](docs/adr/0011-dependency-licences.md) (MIT, Apache-2.0, BSD, ISC y
+similares; sin GPL, LGPL ni AGPL, sin licencias no comerciales), comprobado
+con `just audit`.
 
-## Team
+## Equipo
 
 - Javier Hernández ([@JEHR037](https://github.com/JEHR037))
-- Elisaul Velasquez ([@elisaul170408-ai](https://github.com/elisaul170408-ai))
+- Elisaul Velásquez ([@elisaul170408-ai](https://github.com/elisaul170408-ai))
 - Adrián Guevara ([@adrianegb](https://github.com/adrianegb))
-- Aaron Chacon Rincones ([@chaconjrincones-star](https://github.com/chaconjrincones-star))
+- Aaron Chacón Rincones ([@chaconjrincones-star](https://github.com/chaconjrincones-star))
 - Samuel Hernández ([@unkn0wn-cs](https://github.com/unkn0wn-cs))
-
-## Hackathon submission checklist
-
-- [x] Project metadata in `platanus-hack-project.jsonc` (name, one-liner and
-      description in Spanish, deploy URL).
-- [x] `project-description.md` with the project description for the voting
-      page.
-- [x] 1000x1000 PNG logo, at most 500 KB (`project-logo.png`: the HAWK
-      mark and wordmark).
-- [ ] This README kept concise.
-
-Deploy platforms cannot connect to the organisation repository. Mirror to a
-personal repository by adding it as a second push URL of `origin`:
-
-```bash
-git remote set-url --add --push origin https://github.com/platanus-hack/platanus-hack-26-ve-team-23.git
-git remote set-url --add --push origin https://github.com/<your-user>/<your-repo>.git
-```
