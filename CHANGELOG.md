@@ -10,6 +10,13 @@ Every entry is written when the change is merged, under `Unreleased`.
 
 ### Changed
 
+- ADR-0003 v1.1 and ADR-0021 v1.3: validating off the host is set next to
+  how the large platforms separate who executes from who decides (Apple
+  Secure Enclave and Private Cloud Compute, TPM and Pluton, HSMs, AWS Nitro,
+  SIEM and WORM storage, the reference monitor, AI control), with the limits
+  of the analogy: the hook on the PC is cooperative, the network is HAWK's
+  lever, and the TPM key closes the impersonation gap.
+
 - Repository hygiene: `witness/gen/schemas/` is no longer tracked (tauri-build
   regenerates it); README, CLAUDE.md, ROADMAP and PENDIENTES now describe the
   12-rule catalogue, the Claude Code and Codex hooks, the proxy and `eval` as

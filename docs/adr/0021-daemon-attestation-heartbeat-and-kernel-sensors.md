@@ -37,6 +37,11 @@ daemon, unload kernel programs and use the host's keys while it is inside.
 
 - At enrolment, the daemon creates its signing key **inside the TPM**,
   non-exportable. The owner enrols the public key with the Core (ADR-0017).
+  This is the same move the large platforms make: Apple's Secure Enclave
+  keeps a key fused into the chip, Microsoft Pluton and the TPM keep keys the
+  OS cannot read. Without it, a host compromised with root can copy
+  `host.key` and impersonate its daemon (ADR-0003, "Where the analogy
+  stops").
 - **Measured boot quote:** the Core sends a nonce; the TPM signs the PCR
   values with it. On Linux, IMA adds the hash of the daemon binary. A quote
   that does not match the enrolled values keeps the host inactive or
@@ -109,6 +114,8 @@ Windows TPM access reuses the approach of Nepheral's `tpm.rs`.
 
 ## History
 
+- v1.3 (2026-10-25): The TPM key placed next to its precedents (Secure
+  Enclave, Pluton) and linked to the limits listed in ADR-0003.
 - v1.2 (2026-10-24): the boot measurement is wired end to end: the daemon
   reads the PCRs (`host-daemon/src/tpm.rs`, Linux only for now) and reports
   the digest in `HostHello` and in every signed heartbeat; the Core stores it

@@ -59,6 +59,47 @@ Ollama (RTX 4070) <---forwarded---- forwards to Ollama on the PC       alerts
   an unprivileged user that cannot change the firewall.
 - **Fail closed:** if the Pi does not answer, the hook denies the action.
 
+### Precedents: who executes is not who decides
+
+Validating outside the PC follows a pattern the industry already relies on
+wherever the environment that executes cannot be trusted with its own
+checks:
+
+| Precedent | What executes (may be compromised) | What decides or keeps the secret | In HAWK |
+|---|---|---|---|
+| Apple Secure Enclave | The application processor and its OS | A separate subsystem with its own secure boot, reached only through a mailbox; it releases keys after its own checks | The PC and the agent; the Core, reached only through fixed QUIC messages |
+| Apple Private Cloud Compute | The node that serves a request | Software images that are attested and published in a transparency log, verified by the client before it sends anything | The app verifies every signed head against the identity pinned at pairing |
+| TPM, Microsoft Pluton | The host OS | A chip that measures the boot and signs attestations with a key the OS cannot read | ADR-0021: the daemon key in the TPM and a boot quote (pending) |
+| HSMs in banking and PKI | The applications that ask for signatures | A device that keeps the key and applies its own policy | The Core keeps the head keys; the PC never holds them |
+| AWS Nitro | The customer's instance | Networking, storage and management moved to dedicated cards outside the instance's reach | The firewall decision and the record live outside the PC |
+| SIEM and WORM storage | The host that writes the logs | Logs shipped off the host as they are written, kept where it cannot delete them | The sealed record on the Core; the optional S3 Object Lock archive (ADR-0026) |
+
+The principle is older than any of them: a reference monitor must be
+tamper-proof, always invoked and small enough to verify (Anderson, *Computer
+Security Technology Planning Study*, 1972). In AI control, a trusted monitor
+can watch an untrusted model only while the model cannot subvert it
+(Greenblatt et al., *AI Control: Improving Safety Despite Intentional
+Subversion*, 2023). Another device is the most direct way to meet that
+condition. Three devices also separate duties: the agent acts, the Core
+authorises, the owner's phone audits.
+
+### Where the analogy stops
+
+- The Secure Enclave holds something the application processor needs, so
+  skipping it gains nothing. The hook on the PC can be skipped by an agent
+  with root. HAWK's lever is the network: the router obeys the Core, not the
+  PC. A daemon that stops answering its heartbeat (ADR-0021), or tool calls
+  the proxy saw and the hook never asked about (ADR-0004), end in quarantine
+  (ADR-0018).
+- So the guarantee has three parts: the decision and the record are out of
+  the agent's reach; enforcement on the PC is cooperative and fails closed;
+  enforcement on the network does not depend on the PC.
+- Damage done on the PC before detection is not undone: it is cut off and
+  recorded.
+- Until the daemon key lives in a TPM (ADR-0021), a PC compromised with root
+  can copy that key and impersonate its daemon. The Secure Enclave avoids
+  this with a key fused into the chip; the TPM is our equivalent.
+
 ## Dependencies and licences
 
 None.
@@ -92,3 +133,6 @@ None.
 ## History
 
 - v1.0 (2026-10-24): Initial decision.
+- v1.1 (2026-10-25): Precedents for validating off the host (Secure Enclave,
+  Private Cloud Compute, TPM, HSM, Nitro, SIEM/WORM, the reference monitor,
+  AI control) and where the analogy stops.
