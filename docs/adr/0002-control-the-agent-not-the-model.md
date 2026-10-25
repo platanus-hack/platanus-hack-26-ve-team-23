@@ -89,6 +89,23 @@ None.
 
 1. Write the threat model, with the actors above, into the whitepaper.
 
+## Related work
+
+The large labs converge on the same layer: controls outside the model,
+applied before a tool runs.
+
+| Work | What it says | In HAWK |
+|---|---|---|
+| Díaz, Kern, Olive, *Google's Approach for Secure AI Agents: An Introduction* (Google, 2025) | Hybrid defence in depth: deterministic runtime policy enforcement plus reasoning-based defences; a clearly identified human controller, limited agent powers, observable actions and planning | Rules before the classifier; the owner approves from the phone; deny and quarantine limit the agent; the signed record makes actions observable |
+| Debenedetti, Shumailov et al., *Defeating Prompt Injections by Design* (CaMeL; Google, Google DeepMind, ETH Zurich; arXiv 2503.18813, 2025) | A protective layer around the model, with no change to the model, that enforces policies when tools are called | The hook asks the Core before every tool; the model is never modified |
+| Shah et al., *An Approach to Technical AGI Safety and Security* (Google DeepMind; arXiv 2504.01849, 2025) | System-level monitoring and access control as the second line of defence, limiting harm even if the model is misaligned | The Core monitors every call and the firewall restricts the host, whatever the model intends |
+| Meta, *Agents Rule of Two* (2025) | In one session an agent should combine at most two of: untrusted input, sensitive data, changing state or communicating externally; otherwise it needs supervision such as human approval | The `ask` outcome: the owner approves on the phone (ADR-0022) |
+
+All of them assume the monitor runs on trusted infrastructure: the lab's or
+the provider's. On a developer's machine that place does not exist, because
+the agent runs with the same permissions as everything else. HAWK provides
+it on a separate device (ADR-0003).
+
 ## Related decisions
 
 - ADR-0003: where the monitor runs.
@@ -101,7 +118,20 @@ None.
   Subversion" (2023).
 - Redwood Research, "The Case for AI Control".
 - UK AI Security Institute, ControlArena.
+- Díaz, Kern, Olive, "Google's Approach for Secure AI Agents: An
+  Introduction" (2025):
+  https://research.google/pubs/an-introduction-to-googles-approach-for-secure-ai-agents/
+- Debenedetti, Shumailov et al., "Defeating Prompt Injections by Design"
+  (2025): https://arxiv.org/abs/2503.18813
+- Shah et al., "An Approach to Technical AGI Safety and Security" (2025):
+  https://arxiv.org/abs/2504.01849
+- Meta, "Agents Rule of Two" (2025):
+  https://ai.meta.com/blog/practical-ai-agent-security/
 
 ## History
 
 - v1.0 (2026-10-24): Initial decision.
+- v1.1 (2026-10-25): Related work: Google's approach for secure AI agents,
+  CaMeL, DeepMind's AGI safety approach and Meta's Agents Rule of Two, each
+  mapped to HAWK; they assume trusted infrastructure, which HAWK provides on
+  a separate device.

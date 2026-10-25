@@ -50,6 +50,12 @@ Models of 1.5B and above are out of the demo device.
   steps is the known weakness of a small monitor; rules over the last N
   calls cover part of it, and the rest is reported as a measured limitation.
 - **Each decision records** which stage decided and which rule fired.
+- **Deterministic rules come before any model-based monitor.** In
+  SHADE-Arena (Anthropic, arXiv 2506.15740, 2025) the best LLM monitor
+  separated benign from malign agent transcripts with an AUC of 0.87, and
+  sabotage depended heavily on a scratchpad hidden from the monitor. A model
+  judging alone misses what it cannot see; a rule on the call itself does
+  not depend on the agent's reasoning being visible.
 
 ## Dependencies and licences
 
@@ -83,6 +89,8 @@ Models of 1.5B and above are out of the demo device.
 
 ## History
 
+- v1.3 (2026-10-25): SHADE-Arena cited as a reason the rules come before
+  any model-based monitor.
 - v1.2 (2026-10-24): the model stage is the next step and targets the
   Granite 4 class, around 800M parameters, still below the 1.5B cap. The
   device recommended for the Core will be the one able to run it

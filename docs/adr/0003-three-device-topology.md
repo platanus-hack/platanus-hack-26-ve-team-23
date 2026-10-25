@@ -83,6 +83,21 @@ Subversion*, 2023). Another device is the most direct way to meet that
 condition. Three devices also separate duties: the agent acts, the Core
 authorises, the owner's phone audits.
 
+The control evaluations that followed test this setting directly:
+
+- **Ctrl-Z** (Bhatt, Shlegeris et al., Redwood Research, arXiv 2504.10374,
+  2025) is the first control evaluation in an agent environment: BashBench,
+  257 multi-step system administration tasks, against an agent that tries to
+  download and run malicious code. Its best protocol, resampling suspicious
+  actions, cut attack success from 58% to 7% at about 5% cost to a
+  well-behaved agent. It is close to HAWK's own scenario: a shell agent and
+  a monitor that blocks before execution.
+- **SHADE-Arena** (Anthropic, arXiv 2506.15740, 2025) measures whether an
+  agent can complete a hidden harmful side task without an LLM monitor
+  noticing. The best monitor reached an AUC of 0.87, and sabotage depended
+  heavily on a scratchpad hidden from the monitor: a model-only monitor is
+  not enough (ADR-0005).
+
 ### Where the analogy stops
 
 - The Secure Enclave holds something the application processor needs, so
@@ -136,3 +151,5 @@ None.
 - v1.1 (2026-10-25): Precedents for validating off the host (Secure Enclave,
   Private Cloud Compute, TPM, HSM, Nitro, SIEM/WORM, the reference monitor,
   AI control) and where the analogy stops.
+- v1.2 (2026-10-25): The control evaluations Ctrl-Z (Redwood) and
+  SHADE-Arena (Anthropic) next to Greenblatt et al.

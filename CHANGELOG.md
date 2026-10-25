@@ -10,6 +10,13 @@ Every entry is written when the change is merged, under `Unreleased`.
 
 ### Changed
 
+- Research references in the ADRs: ADR-0002 v1.1 (related work: Google's
+  approach for secure AI agents, CaMeL, DeepMind's AGI safety approach,
+  Meta's Agents Rule of Two), ADR-0003 v1.2 (the Ctrl-Z and SHADE-Arena
+  control evaluations), ADR-0005 v1.3 (SHADE-Arena as a reason rules come
+  first), ADR-0022 v1.2 (`ask` as the Rule of Two's human approval), and a
+  References section in `docs/WHITEPAPER.md`.
+
 - ADR-0003 v1.1 and ADR-0021 v1.3: validating off the host is set next to
   how the large platforms separate who executes from who decides (Apple
   Secure Enclave and Private Cloud Compute, TPM and Pluton, HSMs, AWS Nitro,

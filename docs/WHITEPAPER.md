@@ -90,3 +90,27 @@ for no Guardian, rules only, and rules plus classifier (ADR-0010).
 
 Own blockchain or consensus; content guardrails; interpretability; public
 anchoring (future option for the enterprise edition).
+
+## 10. References
+
+These works place controls outside the model, before a tool runs, and assume
+the monitor runs on trusted infrastructure. HAWK provides that place on a
+separate device (ADR-0002, ADR-0003).
+
+- Greenblatt, Shlegeris, Sachan, Roger, "AI Control: Improving Safety
+  Despite Intentional Subversion" (2023).
+- Díaz, Kern, Olive, "Google's Approach for Secure AI Agents: An
+  Introduction" (Google, 2025):
+  https://research.google/pubs/an-introduction-to-googles-approach-for-secure-ai-agents/
+- Debenedetti, Shumailov et al., "Defeating Prompt Injections by Design"
+  (CaMeL; Google, Google DeepMind, ETH Zurich, 2025):
+  https://arxiv.org/abs/2503.18813
+- Shah et al., "An Approach to Technical AGI Safety and Security" (Google
+  DeepMind, 2025): https://arxiv.org/abs/2504.01849
+- Bhatt, Shlegeris et al., "Ctrl-Z: Controlling AI Agents via Resampling"
+  (Redwood Research, 2025): https://arxiv.org/abs/2504.10374
+- "SHADE-Arena: Evaluating Sabotage and Monitoring in LLM Agents"
+  (Anthropic, 2025): https://arxiv.org/abs/2506.15740 and
+  https://www.anthropic.com/research/shade-arena-sabotage-monitoring
+- Meta, "Agents Rule of Two: A Practical Approach to AI Agent Security"
+  (2025): https://ai.meta.com/blog/practical-ai-agent-security/

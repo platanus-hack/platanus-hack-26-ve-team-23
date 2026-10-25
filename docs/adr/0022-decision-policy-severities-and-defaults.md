@@ -42,6 +42,10 @@ classifier score is allowed.
 The highest severity among the findings decides. Every decision records
 which rule or stage produced it.
 
+Asking the owner is the supervision Meta's *Agents Rule of Two* (2025) calls
+for when an agent combines untrusted input, sensitive data and a state
+change or external communication in one session: human approval.
+
 ### Timings (initial, tuned with the evaluation)
 
 | Value | Initial |
@@ -88,3 +92,4 @@ None.
 - v1.0 (2026-10-24): Initial decision.
 - v1.1 (2026-10-24): the table above is now the default; the owner can move
   the ask and deny thresholds within floors (ADR-0033).
+- v1.2 (2026-10-25): The `ask` outcome tied to Meta's Agents Rule of Two.
